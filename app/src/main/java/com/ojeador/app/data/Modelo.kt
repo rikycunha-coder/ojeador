@@ -176,8 +176,10 @@ data class Perfil(
     val alturaPadre: Double? = null,
     val alturaMadre: Double? = null,
     val medidas: List<Medida> = listOf(Medida("m-inicial", "2026-10-13", altura = 150.0)),
-    /** Pedir dónde fue cada jugada en el campo (modo sin cámara). */
+    /** Enseñar el campo en el directo para marcar dónde fue cada jugada. */
     val pedirZona: Boolean = true,
+    /** Calidad de grabación: HD (720p, ocupa la mitad) o FHD (1080p). */
+    val calidadVideo: String = "HD",
 )
 
 data class Datos(

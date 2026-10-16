@@ -1,5 +1,6 @@
 package com.ojeador.app.data
 
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /*
@@ -125,4 +126,47 @@ fun mmss(seg: Double): String {
 fun fechaCorta(iso: String): String {
     val p = iso.split("-")
     return if (p.size >= 3) "${p[2]}/${p[1]}/${p[0]}" else iso
+}
+
+
+/** Segundo del partido en que empieza una parte. */
+fun Partido.inicioParte(h: Int): Int = if (h == 1) 0 else minParte * 60
+
+/**
+ * Milisegundo del vídeo [v] en que se ve el evento [e]: exacto si se anotó grabando o revisando
+ * ese vídeo; si no, por la sincronización del vídeo con el reloj, cuando la tiene.
+ */
+fun Partido.msEnVideo(v: VideoRef, e: Evento): Long? {
+    if (e.video == v.id && e.vms != null) return e.vms
+    val inicio = v.inicioMs ?: return null
+    if (e.h != v.parte) return null
+    val ms = inicio + (e.t - inicioParte(e.h)) * 1000L
+    return if (ms >= 0 && (v.duracionMs <= 0 || ms <= v.duracionMs)) ms else null
+}
+
+/** Segundo del partido y parte que corresponden al milisegundo [ms] del vídeo [v]. */
+fun Partido.tiempoEnVideo(v: VideoRef, ms: Long): Pair<Int, Int> {
+    v.inicioMs?.let { ini ->
+        val base = inicioParte(v.parte)
+        return (base + ((ms - ini) / 1000).toInt()).coerceAtLeast(base) to v.parte
+    }
+    val ref = eventos.filter { it.video == v.id && it.vms != null }.minByOrNull { abs(it.vms!! - ms) }
+    if (ref != null) return (ref.t + ((ms - ref.vms!!) / 1000).toInt()).coerceAtLeast(0) to ref.h
+    return inicioParte(v.parte) + (ms / 1000).toInt() to v.parte
+}
+
+/** Anota en un momento dado (al revisar un vídeo), sin tocar el reloj. */
+fun Partido.anotarEn(
+    t: Int,
+    h: Int,
+    k: String,
+    ok: Boolean? = null,
+    pie: String? = null,
+    video: String? = null,
+    vms: Long? = null,
+    rx: Float? = null,
+    ry: Float? = null,
+): Pair<Partido, Evento> {
+    val e = Evento(id = nuevoId("e"), t = t, h = h, k = k, ok = ok, pie = pie, video = video, vms = vms, rx = rx, ry = ry)
+    return copy(eventos = eventos + e) to e
 }

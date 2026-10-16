@@ -1,6 +1,11 @@
 package com.ojeador.app
 
 import com.ojeador.app.data.Datos
+import com.ojeador.app.data.Ejemplo
+import com.ojeador.app.data.VideoRef
+import com.ojeador.app.data.anotarEn
+import com.ojeador.app.data.msEnVideo
+import com.ojeador.app.data.tiempoEnVideo
 import com.ojeador.app.data.Evento
 import com.ojeador.app.data.Json
 import com.ojeador.app.data.Medida
@@ -16,6 +21,7 @@ import com.ojeador.app.data.jugado
 import com.ojeador.app.data.segPartido
 import com.ojeador.app.logic.Estadisticas
 import com.ojeador.app.logic.Maduracion
+import com.ojeador.app.logic.Temporada
 import com.ojeador.app.logic.Valoracion
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -138,5 +144,49 @@ class LogicaTest {
         assertEquals(7, p.nota)
         assertEquals(58.0, p.jugadoSeg / 60, 0.001)
         assertNull(Json.datos("esto no es una copia"))
+    }
+
+    @Test
+    fun videoSincronizadoConElReloj() {
+        val v = VideoRef("v1", "content://x", "Vídeo", grabadoConApp = false, parte = 2, inicioMs = 10_000, duracionMs = 600_000)
+        val p = Partido(
+            id = "p",
+            minParte = 35,
+            eventos = listOf(
+                Evento("a", 35 * 60 + 120, 2, "pase", ok = true),
+                Evento("b", 100, 1, "pase", ok = true),
+                Evento("c", 50, 1, "tiro", ok = false, video = "v1", vms = 4_000),
+            ),
+        )
+        // 2 minutos después del pitido de la 2ª parte, que en el vídeo está en el segundo 10.
+        assertEquals(130_000L, p.msEnVideo(v, p.eventos[0]))
+        assertNull(p.msEnVideo(v, p.eventos[1]))
+        assertEquals(4_000L, p.msEnVideo(v, p.eventos[2]))
+        assertEquals(35 * 60 + 120 to 2, p.tiempoEnVideo(v, 130_000))
+        // Antes del pitido cuenta como el inicio de la parte.
+        assertEquals(35 * 60 to 2, p.tiempoEnVideo(v, 2_000))
+        // Sin sincronizar: se usa la jugada más cercana anotada en ese vídeo.
+        val sinSync = v.copy(inicioMs = null)
+        assertEquals(56 to 1, p.tiempoEnVideo(sinSync, 10_000))
+        val (q, e) = p.anotarEn(56, 1, "regate", ok = true, pie = "I", video = "v1", vms = 10_000, rx = 0.5f, ry = 0.4f)
+        assertEquals(4, q.eventos.size)
+        assertEquals(10_000L, q.msEnVideo(sinSync, e))
+    }
+
+    @Test
+    fun ejemploYTemporada() {
+        val e = Ejemplo.partido(0)
+        assertTrue(e.eventos.zipWithNext().all { (a, b) -> a.t <= b.t })
+        assertTrue(e.eventos.filter { it.h == 2 }.all { it.t >= 35 * 60 })
+        assertEquals(2 to 1, e.goles())
+        val t = Temporada.resumen(listOf(e), "D")
+        assertEquals(1, t.partidos)
+        assertEquals(1, t.goles)
+        assertEquals(1, t.asistencias)
+        assertEquals(1, t.ganados)
+        assertEquals(62.0, t.minutos, 0.01)
+        assertTrue(t.pase.total >= 30)
+        val d = Datos(partidos = listOf(e))
+        assertEquals(d, Json.datos(Json.datos(d)))
     }
 }

@@ -156,6 +156,7 @@ object Json {
         .putOpt2("fatherH", p.alturaPadre).putOpt2("motherH", p.alturaMadre)
         .put("measures", JSONArray().also { a -> p.medidas.forEach { a.put(medida(it)) } })
         .put("askZone", p.pedirZona)
+        .put("videoQ", p.calidadVideo)
 
     fun perfil(o: JSONObject): Perfil {
         val d = Perfil()
@@ -172,6 +173,7 @@ object Json {
             alturaMadre = o.dbl("motherH"),
             medidas = o.optJSONArray("measures")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(::medida) } } ?: d.medidas,
             pedirZona = o.bool("askZone") ?: true,
+            calidadVideo = o.str("videoQ", d.calidadVideo),
         )
     }
 
