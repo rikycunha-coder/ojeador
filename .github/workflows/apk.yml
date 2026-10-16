@@ -1,0 +1,45 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Pruebas y APK
+        run: ./gradlew --no-daemon --stacktrace testReleaseUnitTest assembleRelease
+
+      - name: Guardar el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ojeador-apk
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Publicar en «Releases» (enlace fijo para descargar en el móvil)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk Ojeador.apk
+          gh release delete ultima --yes --cleanup-tag || true
+          gh release create ultima Ojeador.apk \
+            --title "Ojeador (última versión)" \
+            --notes "Compilado de ${GITHUB_SHA::7}. En el móvil: descarga Ojeador.apk y ábrelo para instalar."
