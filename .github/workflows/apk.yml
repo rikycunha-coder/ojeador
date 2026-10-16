@@ -26,7 +26,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Pruebas y APK
-        run: ./gradlew --no-daemon --stacktrace testReleaseUnitTest assembleRelease
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testReleaseUnitTest assembleRelease 2>&1 | tee build.log
+
+      - name: Resumen del error
+        if: failure()
+        run: |
+          echo "=== RESUMEN DEL ERROR ==="
+          grep -E "^e: |^w: .*error|FAILED|Test.*>.*FAILED" build.log | head -80 || true
+          grep -A 30 "What went wrong" build.log | head -120 || true
+          echo "=== FIN DEL RESUMEN ==="
 
       - name: Guardar el APK
         uses: actions/upload-artifact@v4
