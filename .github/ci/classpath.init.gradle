@@ -1,0 +1,14 @@
+// Escribe en build/classpath.txt el classpath con el que se compila el Kotlin de la app.
+// Solo lo usa el flujo «Classpath» para comprobar la compilación fuera de GitHub.
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.findProject(":app")
+    app.tasks.register("listarClasspath") {
+        dependsOn("compileDebugKotlin")
+        doLast {
+            def kc = app.tasks.getByName("compileDebugKotlin")
+            def out = app.rootProject.file("build/classpath.txt")
+            out.parentFile.mkdirs()
+            out.text = kc.libraries.files.collect { it.absolutePath }.join("\n")
+        }
+    }
+}

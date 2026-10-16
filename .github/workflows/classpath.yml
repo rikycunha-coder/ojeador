@@ -1,0 +1,46 @@
+name: Classpath
+
+# Manual: empaqueta las bibliotecas con las que se compila la app, para comprobar el código
+# sin el SDK de Android.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  classpath:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Listar el classpath
+        run: ./gradlew --no-daemon --no-configuration-cache --init-script .github/ci/classpath.init.gradle :app:listarClasspath
+
+      - name: Empaquetar
+        run: |
+          mkdir -p cp
+          i=0
+          while read -r f; do
+            i=$((i+1))
+            if [ -f "$f" ]; then cp "$f" "cp/$(printf %03d $i)-$(basename "$f")"; fi
+            if [ -d "$f" ]; then (cd "$f" && zip -qr "$GITHUB_WORKSPACE/cp/$(printf %03d $i)-dir.jar" .); fi
+          done < build/classpath.txt
+          find "$ANDROID_HOME/platforms" -name android.jar -exec cp {} cp/000-android.jar \; -quit
+          ls -la cp | head -200
+          zip -qr classpath.zip cp
+          ls -la classpath.zip
+
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete classpath --yes --cleanup-tag || true
+          gh release create classpath classpath.zip --prerelease --title "classpath (interno)" --notes "Uso interno para compilar."
