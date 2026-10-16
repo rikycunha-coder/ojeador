@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -85,10 +87,8 @@ class RecorridoTest {
         paso("ficha") {
             clic(hasText("Rafa"))
             captura("ficha")
-            repeat(4) {
-                bajar()
-                captura("ficha-${it + 2}")
-            }
+            bajar()
+            captura("ficha-2")
         }
         volverAlInicio()
         var id: String? = null
@@ -102,6 +102,11 @@ class RecorridoTest {
             clic(hasText("Empezar", substring = true))
             accion("Pase: Bueno")
             accion("Control orientado: Malo")
+            accion("Decisión con balón: Buena")
+            check(claves(id) == listOf("entra", "pase", "control", "decision")) { "el directo guardó ${claves(id)}" }
+            // Deshacer, en la franja de abajo, quita solo la última.
+            clic(hasText("Deshacer"))
+            check(claves(id) == listOf("entra", "pase", "control")) { "deshacer dejó ${claves(id)}" }
             accion("Decisión con balón: Buena")
             captura("directo-anotado")
             bajar()
@@ -155,6 +160,8 @@ class RecorridoTest {
         clic(hasContentDescription("Cerrar"))
         clic(hasContentDescription("Parar la grabación"))
         esperar(30_000) { almacen.partido(id)?.videos?.isNotEmpty() == true }
+        val conVideo = almacen.partido(id)?.eventos?.filter { it.video != null }?.map { it.k }
+        check(conVideo == listOf("pase", "decision")) { "con la cámara se guardó $conVideo" }
         SystemClock.sleep(1500)
         captura("camara-guardado")
         val v = almacen.partido(id)?.videos?.firstOrNull()
@@ -175,6 +182,9 @@ class RecorridoTest {
         regla.onNodeWithTag("video").performTouchInput { click(Offset(width * 0.45f, height * 0.5f)) }
         captura("revisar-marcado")
         accion("Regate / 1 contra 1: Gana")
+        check(almacen.partido(id)?.eventos?.any { it.k == "regate" && it.video != null && it.vms != null } == true) {
+            "la jugada anotada en el vídeo no se guardó"
+        }
         SystemClock.sleep(1500)
         captura("revisar-anotado")
         instr.uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_90)
@@ -233,7 +243,8 @@ class RecorridoTest {
 
     private fun captura(nombre: String) {
         runCatching { regla.waitForIdle() }
-        SystemClock.sleep(700)
+        // El móvil virtual dibuja despacio: sin esta espera, a veces sale la pantalla anterior.
+        SystemClock.sleep(1200)
         val bmp = instr.uiAutomation.takeScreenshot() ?: return
         val copia = if (bmp.config == Bitmap.Config.HARDWARE) bmp.copy(Bitmap.Config.ARGB_8888, false) else bmp
         n++
@@ -254,13 +265,23 @@ class RecorridoTest {
 
     private fun pestana(t: String) = clic(hasText(t))
 
-    /** Anota una acción desde la rejilla: la busca bajando por la lista si hace falta. */
+    /**
+     * Anota una acción desde la rejilla. La trae antes a la vista: aunque el botón exista, puede
+     * estar más abajo, fuera de la pantalla, y entonces el toque no llega a ninguna parte.
+     */
     private fun accion(descripcion: String) {
         val m = hasContentDescription(descripcion)
-        if (!existe(m)) runCatching { regla.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(m) }
+        if (existe(m)) {
+            regla.onAllNodes(m).onFirst().performScrollTo()
+        } else {
+            regla.onNode(hasScrollAction() and hasAnyDescendant(m)).performScrollToNode(m)
+        }
         clic(m)
         SystemClock.sleep(400)
     }
+
+    /** Las claves de las anotaciones del partido, en el orden en que se guardaron. */
+    private fun claves(id: String?): List<String> = id?.let { almacen.partido(it)?.eventos?.map { e -> e.k } }.orEmpty()
 
     private fun bajar() {
         runCatching {

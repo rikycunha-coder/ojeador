@@ -34,7 +34,8 @@ object Temporada {
     fun resumen(partidos: List<Partido>, pieHabil: String): ResumenTemporada {
         val rs = partidos.map { Estadisticas.resumen(it, pieHabil) }
         fun suma(f: (Resumen) -> Ratio) = Ratio(rs.sumOf { f(it).buenas }, rs.sumOf { f(it).total })
-        val resultados = partidos.map { it.goles() }
+        // Ganados, empatados y perdidos: solo los partidos terminados (uno en curso aún no tiene resultado).
+        val resultados = partidos.filter { it.terminado }.map { it.goles() }
         return ResumenTemporada(
             partidos = partidos.size,
             titular = partidos.count { it.titular },

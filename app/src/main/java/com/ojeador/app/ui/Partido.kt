@@ -1,5 +1,9 @@
 package com.ojeador.app.ui
 
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -95,7 +99,6 @@ fun PantallaPartido(almacen: Almacen, pantalla: Pantalla.DePartido, nav: Navegad
     val perfil = almacen.datos.perfil
     var menu by remember { mutableStateOf(false) }
     var borrar by remember { mutableStateOf(false) }
-    var anotado by remember { mutableStateOf<Evento?>(null) }
     LaunchedEffect(p.id) {
         if (almacen.datos.actual != p.id) almacen.cambiar { it.copy(actual = p.id) }
     }
@@ -120,21 +123,10 @@ fun PantallaPartido(almacen: Almacen, pantalla: Pantalla.DePartido, nav: Navegad
         Pestanas(PESTANAS, pantalla.pestana) { nav.cambiar(pantalla.copy(pestana = it)) }
         Box(Modifier.weight(1f)) {
             when (pantalla.pestana) {
-                0 -> TabDirecto(almacen, p, perfil) { anotado = it }
+                0 -> TabDirecto(almacen, p, perfil)
                 1 -> TabDatos(almacen, p, perfil)
                 2 -> TabInforme(almacen, p, perfil)
                 else -> TabVideo(almacen, p, nav)
-            }
-            anotado?.let { e ->
-                BannerAnotado(
-                    e,
-                    Modifier.align(Alignment.BottomCenter).padding(12.dp),
-                    onDeshacer = {
-                        almacen.cambiarPartido(p.id) { it.borrarEvento(e.id) }
-                        anotado = null
-                    },
-                    onCerrar = { anotado = null },
-                )
             }
         }
     }
@@ -180,17 +172,41 @@ fun Pestanas(titulos: List<String>, sel: Int, onSel: (Int) -> Unit) {
 fun descripcion(e: Evento): String =
     listOfNotNull(Catalogo.etiqueta(e), e.pie?.let { PIES[it] }, "min ${minutoDe(e.t)}").joinToString(" · ")
 
+/**
+ * La última anotación, en una franja fija debajo de la lista: confirma cada toque y deja
+ * deshacerlo. Va fija y no flotando encima porque un aviso flotante tapaba los botones de abajo
+ * de la rejilla, y el siguiente toque rápido caía en «Deshacer» y borraba la jugada anterior.
+ */
 @Composable
-fun BannerAnotado(e: Evento, modifier: Modifier, onDeshacer: () -> Unit, onCerrar: () -> Unit) {
-    LaunchedEffect(e.id) {
-        delay(2600)
-        onCerrar()
-    }
+fun BarraAnotado(e: Evento?, pista: String, onDeshacer: (Evento) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Surface(modifier, shape = RoundedCornerShape(14.dp), color = cs.inverseSurface, contentColor = cs.inverseOnSurface, shadowElevation = 6.dp) {
-        Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Anotado: ${descripcion(e)}", Modifier.weight(1f, fill = false), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            TextButton(onClick = onDeshacer) { Text("Deshacer", color = cs.inversePrimary) }
+    val destello = remember { Animatable(0f) }
+    // Destella con cada anotación nueva; no al abrir la pantalla ni al volver a una anterior.
+    val vistas = remember { HashSet<String>().apply { e?.let { add(it.id) } } }
+    LaunchedEffect(e?.id) {
+        if (e != null && vistas.add(e.id)) {
+            destello.snapTo(1f)
+            destello.animateTo(0f, tween(1500))
+        }
+    }
+    Surface(color = lerp(cs.surfaceContainer, cs.primaryContainer, destello.value)) {
+        Column {
+            HorizontalDivider(color = cs.outlineVariant)
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (e == null) {
+                    TextoSuave(pista, Modifier.weight(1f).padding(vertical = 8.dp))
+                } else {
+                    Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                        Text("Última anotación", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
+                        Text(descripcion(e), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    // El fin de una parte no se deshace desde aquí: el reloj ya pasó a la siguiente.
+                    if (e.k != "fin1" && e.k != "fin") TextButton(onClick = { onDeshacer(e) }) { Text("Deshacer") }
+                }
+            }
         }
     }
 }

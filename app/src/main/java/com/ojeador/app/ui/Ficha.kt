@@ -204,7 +204,7 @@ private fun TarjetaTemporada(almacen: Almacen) {
     val pal = paletaPantalla()
     val ex = LocalExtra.current
     val valorados = partidos.filter { it.valoraciones.isNotEmpty() }
-    Tarjeta(titulo = "Temporada · ${partidos.size} partidos") {
+    Tarjeta(titulo = "Temporada · ${cuenta(partidos.size, "partido")}") {
         if (valorados.isNotEmpty()) {
             val medias = Area.entries.map { Valoracion.mediaAreaPartidos(valorados, it) }
             Grafico(Modifier.fillMaxWidth().height(220.dp)) { c, w, h, u ->

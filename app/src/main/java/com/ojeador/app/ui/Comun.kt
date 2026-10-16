@@ -71,6 +71,9 @@ fun pct(r: Ratio): String = r.pct?.let { "$it %" } ?: "—"
 
 fun pct(v: Int?): String = v?.let { "$it %" } ?: "—"
 
+/** «1 partido», «3 partidos». */
+fun cuenta(n: Int, singular: String, plural: String = singular + "s"): String = "$n " + if (n == 1) singular else plural
+
 fun Context.aviso(texto: String) = Toast.makeText(this, texto, Toast.LENGTH_SHORT).show()
 
 fun Context.actividad(): ComponentActivity? {

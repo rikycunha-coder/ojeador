@@ -110,7 +110,7 @@ fun PantallaInicio(almacen: Almacen, nav: Navegador) {
                 when (n) {
                     null -> "Ese archivo no es una copia de Ojeador"
                     1 -> "Importado 1 partido"
-                    else -> "Importados $n partidos"
+                    else -> "Importados ${cuenta(n, "partido")}"
                 },
             )
         }
@@ -210,7 +210,7 @@ private fun ResumenDeTemporada(d: Datos, onPdf: () -> Unit) {
         } else {
             val t = Temporada.resumen(reales, d.perfil.pie)
             val celdas = listOf(
-                Triple("${t.partidos}", "partidos", "${t.ganados} G · ${t.empatados} E · ${t.perdidos} P"),
+                Triple("${t.partidos}", if (t.partidos == 1) "partido" else "partidos", "${t.ganados} G · ${t.empatados} E · ${t.perdidos} P"),
                 Triple("${t.minutos.roundToInt()}'", "minutos", "${t.titular} de titular"),
                 Triple("${t.goles} · ${t.asistencias}", "goles · asist.", null),
                 Triple(dec(t.notaMedia), "nota media", null),

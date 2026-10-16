@@ -30,6 +30,7 @@ import com.ojeador.app.ui.ES
 import com.ojeador.app.ui.Graficos
 import com.ojeador.app.ui.PaletaGrafico
 import com.ojeador.app.ui.PuntoCampo
+import com.ojeador.app.ui.cuenta
 import com.ojeador.app.ui.dec
 import com.ojeador.app.ui.formatoCorto
 import com.ojeador.app.ui.hoy
@@ -97,9 +98,12 @@ private class Hoja(private val doc: PdfDocument, private val pie: String) {
         pagina = null
     }
 
+    /** Puntos que quedan libres en esta página. */
+    fun libre(): Float = if (pagina == null) 0f else alto - margen - 14f - y
+
     /** Si no caben [h] puntos más en esta página, pasa a la siguiente. */
     fun cabe(h: Float) {
-        if (pagina == null || y + h > alto - margen - 14f) nueva()
+        if (libre() < h) nueva()
     }
 
     fun texto(
@@ -320,33 +324,43 @@ object InformePdf {
         Graficos.bloques(h.c, RectF(h.margen, h.y, h.margen + h.util, h.y + 90f), buenas, fallos, p.minParte, pal, 1f)
         h.y += 96f
         r.partes.forEachIndexed { i, parte ->
-            h.texto("${i + 1}ª parte: ${parte.buenas} buenas y ${parte.fallos} fallos · acierto ${pct(parte.pct)}", 9.5f, despues = 2f)
+            val t = if (parte.buenas + parte.fallos == 0) "sin acciones con acierto o fallo"
+            else "${cuenta(parte.buenas, "buena")} y ${cuenta(parte.fallos, "fallo")} · acierto ${pct(parte.pct)}"
+            h.texto("${i + 1}ª parte: $t", 9.5f, despues = 2f)
         }
 
         val destacadas = p.eventos.filter { it.k in setOf("gol", "asist", "pclave", "rompe", "momento") || it.nota != null }.sortedBy { it.t }
         if (destacadas.isNotEmpty()) {
+            // El título no se queda solo al pie de una página: baja con sus primeras jugadas.
+            h.cabe(34f + minOf(destacadas.size, 4) * 14f)
             h.seccion("Jugadas destacadas")
             destacadas.forEach { e -> h.texto("${minutoDe(e.t)}'  ${linea(e)}", 9.5f, despues = 2f) }
         }
 
         val cronologia = p.eventos.sortedBy { it.t }
         if (cronologia.isNotEmpty()) {
+            val alto = 11.5f
+            h.cabe(34f + minOf((cronologia.size + 1) / 2, 4) * alto)
             h.seccion("Todas las anotaciones")
             val col = (h.util - 16f) / 2
-            val porColumna = 46
-            cronologia.chunked(porColumna * 2).forEach { bloque ->
-                val filas = minOf(porColumna, (bloque.size + 1) / 2)
-                h.cabe(filas * 11.5f + 4f)
+            var resto = cronologia
+            while (resto.isNotEmpty()) {
+                // Dos columnas que llenan lo que queda de página; lo demás sigue en la siguiente.
+                if (h.libre() < 4 * alto + 4f) h.nueva()
+                val porColumna = ((h.libre() - 4f) / alto).toInt()
+                val bloque = resto.take(porColumna * 2)
+                resto = resto.drop(bloque.size)
+                val filas = (bloque.size + 1) / 2
                 bloque.forEachIndexed { i, e ->
                     val x = h.margen + (i / filas) * (col + 16f)
-                    val y = h.y + (i % filas) * 11.5f + 8f
+                    val y = h.y + (i % filas) * alto + 8f
                     h.c.drawText("${minutoDe(e.t)}'", x, y, pintura(GRIS, 8f, negrita = true))
                     var t = linea(e)
                     val p8 = pintura(TINTA, 8f)
                     while (p8.measureText(t) > col - 30f && t.length > 4) t = t.dropLast(2) + "…"
                     h.c.drawText(t, x + 24f, y, p8)
                 }
-                h.y += filas * 11.5f + 4f
+                h.y += filas * alto + 4f
             }
         }
     }
@@ -354,27 +368,35 @@ object InformePdf {
     private fun linea(e: Evento): String =
         listOfNotNull(Catalogo.etiqueta(e), e.pie?.let { PIES[it]?.lowercase(ES) }, e.nota).joinToString(" · ")
 
-    /** Radar de las cuatro áreas y, debajo, cada atributo en dos columnas. */
+    /**
+     * Radar de las cuatro áreas y, debajo, cada atributo en dos columnas. Va compacto para que en
+     * la primera página quepan el radar y las barras juntos.
+     */
     private fun valoracion(h: Hoja, medias: List<Double?>, valor: (String) -> Double?) {
-        h.cabe(190f)
-        val cx = h.margen + h.util / 2
-        Graficos.radar(h.c, cx, h.y + 92f, 66f, Area.entries.map { it.titulo }, medias, pal, 0.95f)
-        h.y += 186f
+        if (Valoracion.atributos.none { valor(it.k) != null }) {
+            h.texto("Sin valorar todavía: se puntúa en la pestaña Informe de la app.", 9.5f, GRIS, despues = 6f)
+            return
+        }
+        val radio = 54f
+        h.cabe(2 * radio + 66f)
+        Graficos.radar(h.c, h.margen + h.util / 2, h.y + radio + 30f, radio, Area.entries.map { it.titulo }, medias, pal, 0.95f)
+        h.y += 2 * radio + 64f
         val col = (h.util - 24f) / 2
+        val fila = 13f
         val izquierda = listOf(Area.TECNICA, Area.TACTICA)
         val derecha = listOf(Area.FISICA, Area.PSICO)
-        fun altura(areas: List<Area>) = areas.sumOf { a -> 18.0 + Valoracion.atributos.count { it.area == a } * 15.0 }.toFloat()
+        fun altura(areas: List<Area>) = areas.sumOf { a -> 16.0 + Valoracion.atributos.count { it.area == a } * fila }.toFloat()
         val alto = max(altura(izquierda), altura(derecha))
         h.cabe(alto)
         listOf(izquierda, derecha).forEachIndexed { i, areas ->
             val x = h.margen + i * (col + 24f)
             var yy = h.y
-            areas.forEachIndexed { j, a ->
+            areas.forEach { a ->
                 val idx = Area.entries.indexOf(a)
-                h.c.drawText("${a.titulo}${medias[idx]?.let { " · " + dec(it) } ?: ""}", x, yy + 11f, pintura(VERDE, 9.5f, negrita = true))
-                yy += 18f
+                h.c.drawText("${a.titulo}${medias[idx]?.let { " · " + dec(it) } ?: ""}", x, yy + 10f, pintura(VERDE, 9.5f, negrita = true))
+                yy += 16f
                 val filas = Valoracion.atributos.filter { it.area == a }.map { it.nombre to valor(it.k) }
-                yy += Graficos.barras(h.c, x, yy, col, filas, pal, 1f)
+                yy += Graficos.barras(h.c, x, yy, col, filas, pal, 1f, alto = fila, fraccionEtiqueta = 0.6f)
             }
         }
         h.y += alto + 4f
@@ -392,7 +414,7 @@ object InformePdf {
         h.seccion("La temporada en números")
         h.kpis(
             listOf(
-                DatoKpi("${t.partidos}", "partidos", "${t.ganados} G · ${t.empatados} E · ${t.perdidos} P"),
+                DatoKpi("${t.partidos}", if (t.partidos == 1) "partido" else "partidos", "${t.ganados} G · ${t.empatados} E · ${t.perdidos} P"),
                 DatoKpi("${t.minutos.roundToInt()}'", "minutos", "${t.titular} de titular"),
                 DatoKpi("${t.goles} · ${t.asistencias}", "goles · asistencias", "${t.pasesClave} pases clave"),
                 DatoKpi(dec(t.notaMedia), "nota media"),
@@ -405,7 +427,7 @@ object InformePdf {
 
         val valorados = partidos.filter { it.valoraciones.isNotEmpty() }
         if (valorados.isNotEmpty()) {
-            h.seccion("Valoración media por áreas · ${valorados.size} partidos valorados")
+            h.seccion("Valoración media por áreas · ${cuenta(valorados.size, "partido valorado", "partidos valorados")}")
             valoracion(h, Area.entries.map { Valoracion.mediaAreaPartidos(valorados, it) }) { k -> Valoracion.mediaAtributo(valorados, k) }
             val ranking = Valoracion.ranking(valorados)
             if (ranking.size >= 4) {

@@ -55,7 +55,7 @@ import com.ojeador.app.data.Perfil
 import com.ojeador.app.data.alternarCampo
 import com.ojeador.app.data.alternarReloj
 import com.ojeador.app.data.anotar
-import com.ojeador.app.data.deshacer
+import com.ojeador.app.data.borrarEvento
 import com.ojeador.app.data.enAnadido
 import com.ojeador.app.data.finParte
 import com.ojeador.app.data.jugado
@@ -66,7 +66,7 @@ import com.ojeador.app.data.segPartido
 import com.ojeador.app.logic.Estadisticas
 
 @Composable
-fun TabDirecto(almacen: Almacen, p: Partido, perfil: Perfil, onAnotado: (Evento) -> Unit) {
+fun TabDirecto(almacen: Almacen, p: Partido, perfil: Perfil) {
     MantenerPantallaEncendida()
     var pie by remember(p.id) { mutableStateOf<String?>(null) }
     var zona by remember(p.id) { mutableStateOf<Pair<Float, Float>?>(null) }
@@ -79,49 +79,48 @@ fun TabDirecto(almacen: Almacen, p: Partido, perfil: Perfil, onAnotado: (Evento)
         val a = Catalogo.porClave[k]
         val elPie = if (a?.pie == true) pie ?: perfil.pie else null
         val z = if (a != null) zona else null
-        var nuevo: Evento? = null
-        almacen.cambiarPartido(p.id) { q ->
-            val (r, e) = q.anotar(System.currentTimeMillis(), k, ok, elPie, z?.first, z?.second)
-            nuevo = e
-            r
-        }
+        almacen.cambiarPartido(p.id) { q -> q.anotar(System.currentTimeMillis(), k, ok, elPie, z?.first, z?.second).first }
         pie = null
         if (a != null) zona = null
         vista.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-        nuevo?.let(onAnotado)
     }
     val cuenta = remember(p.eventos) { conteo(p.eventos) }
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { Marcador(almacen, p) { k -> anotar(k, null) } }
-        if (!p.enCampo && p.reloj.enMarcha && !p.terminado) {
-            item {
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.tertiaryContainer)
-                        .padding(start = 14.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${perfil.nombre} está en el banquillo: sus minutos no cuentan.",
-                        Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    TextButton(onClick = { almacen.cambiarPartido(p.id) { it.alternarCampo(System.currentTimeMillis()) } }) {
-                        Text("Entra")
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { Marcador(almacen, p) { k -> anotar(k, null) } }
+            if (!p.enCampo && p.reloj.enMarcha && !p.terminado) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.tertiaryContainer)
+                            .padding(start = 14.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${perfil.nombre} está en el banquillo: sus minutos no cuentan.",
+                            Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        TextButton(onClick = { almacen.cambiarPartido(p.id) { it.alternarCampo(System.currentTimeMillis()) } }) {
+                            Text("Entra")
+                        }
                     }
                 }
             }
+            if (perfil.pedirZona) {
+                item { CampoToque(p, zona, haciaDerecha, onToque = { zona = it }, onVoltear = { ataque1Derecha = !ataque1Derecha }) }
+            }
+            item { SelectorPie(pie ?: perfil.pie, perfil.pie) { pie = if (it == perfil.pie) null else it } }
+            item { RejillaAcciones(cuenta) { k, ok -> anotar(k, ok) } }
+            item { UltimasAnotaciones(p) { editar = it } }
         }
-        if (perfil.pedirZona) {
-            item { CampoToque(p, zona, haciaDerecha, onToque = { zona = it }, onVoltear = { ataque1Derecha = !ataque1Derecha }) }
+        BarraAnotado(p.eventos.lastOrNull(), "Toca una acción cuando la veas: queda anotada con su minuto.") { e ->
+            almacen.cambiarPartido(p.id) { it.borrarEvento(e.id) }
         }
-        item { SelectorPie(pie ?: perfil.pie, perfil.pie) { pie = if (it == perfil.pie) null else it } }
-        item { RejillaAcciones(cuenta) { k, ok -> anotar(k, ok) } }
-        item { UltimasAnotaciones(almacen, p) { editar = it } }
     }
     EditorDeEvento(almacen, p, editar) { editar = null }
 }
@@ -330,17 +329,10 @@ fun CeldaAccion(a: Accion, cuenta: IntArray?, alto: Dp, onAccion: (String, Boole
 }
 
 @Composable
-fun UltimasAnotaciones(almacen: Almacen, p: Partido, onEditar: (Evento) -> Unit) {
+fun UltimasAnotaciones(p: Partido, onEditar: (Evento) -> Unit) {
     val ultimas = p.eventos.takeLast(8).asReversed()
-    Tarjeta(
-        titulo = "Últimas anotaciones",
-        accion = {
-            if (p.eventos.isNotEmpty()) {
-                TextButton(onClick = { almacen.cambiarPartido(p.id) { it.deshacer() } }) { Text("Deshacer la última") }
-            }
-        },
-    ) {
-        if (ultimas.isEmpty()) TextoSuave("Aún no hay nada anotado. Toca una acción cuando la veas.")
+    Tarjeta(titulo = "Últimas anotaciones · toca para corregir") {
+        if (ultimas.isEmpty()) TextoSuave("Aún no hay nada anotado.")
         ultimas.forEach { e -> FilaEvento(e, { onEditar(e) }) }
     }
 }

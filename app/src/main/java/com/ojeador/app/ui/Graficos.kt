@@ -193,10 +193,11 @@ object Graficos {
         u: Float,
         maximo: Double = 5.0,
         alto: Float = 15f * u,
+        fraccionEtiqueta: Float = 0.48f,
     ): Float {
         val et = texto(pal.tinta, 9.5f * u)
         val cifra = texto(pal.tinta, 9.5f * u, negrita = true, alin = Paint.Align.RIGHT)
-        val anchoEt = ancho * 0.48f
+        val anchoEt = ancho * fraccionEtiqueta
         val anchoBarra = ancho - anchoEt - 26f * u
         val pista = relleno(pal.rejilla)
         val lleno = relleno(pal.principal)

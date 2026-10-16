@@ -12,7 +12,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -421,9 +419,9 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
         }
     }
     val lista: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.weight(1f).fillMaxWidth(),
                 state = estadoLista,
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -463,16 +461,9 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                     }
                 }
             }
-            anotado?.let { e ->
-                BannerAnotado(
-                    e,
-                    Modifier.align(Alignment.BottomCenter).padding(12.dp),
-                    onDeshacer = {
-                        almacen.cambiarPartido(id) { q -> q.copy(eventos = q.eventos.filter { it.id != e.id }) }
-                        anotado = null
-                    },
-                    onCerrar = { anotado = null },
-                )
+            BarraAnotado(anotado, "Aquí sale cada jugada que anotes, por si hay que deshacerla.") { e ->
+                almacen.cambiarPartido(id) { q -> q.copy(eventos = q.eventos.filter { it.id != e.id }) }
+                anotado = null
             }
         }
     }

@@ -185,6 +185,10 @@ class LogicaTest {
         assertEquals(1, t.asistencias)
         assertEquals(1, t.ganados)
         assertEquals(62.0, t.minutos, 0.01)
+        // Un partido aún en juego no cuenta como ganado, empatado ni perdido.
+        val conUnoEnCurso = Temporada.resumen(listOf(e, e.copy(id = "curso", terminado = false)), "D")
+        assertEquals(2, conUnoEnCurso.partidos)
+        assertEquals(1, conUnoEnCurso.ganados + conUnoEnCurso.empatados + conUnoEnCurso.perdidos)
         assertTrue(t.pase.total >= 30)
         val d = Datos(partidos = listOf(e))
         assertEquals(d, Json.datos(Json.datos(d)))
