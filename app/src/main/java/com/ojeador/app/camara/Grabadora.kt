@@ -137,8 +137,11 @@ class Grabadora(private val ctx: Context) {
             camara = p.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, pv, vc)
             preview = pv
             captura = vc
-            pv.resolutionInfo?.resolution?.let { s ->
-                if (s.width > 0 && s.height > 0) aspecto = max(s.width, s.height).toFloat() / min(s.width, s.height)
+            leerAspecto()
+            // La resolución final se sabe cuando la imagen ya llega: entonces se ajusta el recuadro.
+            v.previewStreamState.removeObservers(owner)
+            v.previewStreamState.observe(owner) { estado ->
+                if (estado == PreviewView.StreamState.STREAMING) leerAspecto()
             }
             camara?.cameraInfo?.zoomState?.value?.let { zoom = it.zoomRatio }
             error = null
@@ -146,6 +149,11 @@ class Grabadora(private val ctx: Context) {
         } catch (e: Exception) {
             error = "No se pudo abrir la cámara: ${e.message}"
         }
+    }
+
+    private fun leerAspecto() {
+        val s = preview?.resolutionInfo?.cropRect ?: return
+        if (s.width() > 0 && s.height() > 0) aspecto = max(s.width(), s.height()).toFloat() / min(s.width(), s.height())
     }
 
     /** Milisegundo del vídeo que se está grabando, o null si no se graba. */

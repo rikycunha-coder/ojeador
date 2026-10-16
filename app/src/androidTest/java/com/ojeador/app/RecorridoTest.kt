@@ -30,6 +30,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ojeador.app.pdf.InformePdf
+import com.ojeador.app.util.Compartir
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
@@ -199,6 +200,8 @@ class RecorridoTest {
         val t = InformePdf.temporada(ctx, d)
         t.copyTo(File(salida, "informe-temporada.pdf"), overwrite = true)
         paginas(t, "pdf-temporada")
+        // El enlace que reciben WhatsApp o el correo al compartir (falla si FileProvider no lo ve).
+        File(salida, "compartir.txt").writeText(Compartir.uri(ctx, t).toString())
     }
 
     private fun oscuro() {
