@@ -17,6 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
+      # La imagen del móvil virtual ocupa varios GB: se hace sitio quitando lo que no se usa.
+      - name: Liberar espacio en disco
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc /usr/local/.ghcup \
+            /usr/share/swift /usr/local/share/boost /usr/local/share/powershell /usr/local/lib/node_modules \
+            "$AGENT_TOOLSDIRECTORY/CodeQL" || true
+          df -h /
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
