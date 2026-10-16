@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -51,9 +52,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ojeador.app.Almacen
@@ -73,6 +78,8 @@ import com.ojeador.app.data.tiempoEnVideo
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** Nombre y duración (ms) de un vídeo elegido de la galería. */
 private fun infoVideo(ctx: Context, uri: Uri): Pair<String, Long> {
@@ -195,18 +202,24 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
     var arrastre by remember { mutableStateOf<Float?>(null) }
     var seleccion by remember { mutableStateOf<Pair<Float, Float>?>(null) }
     var selMs by remember { mutableLongStateOf(0L) }
+    // Si el vídeo se paró al tocar a Rafa, sigue solo en cuanto se anota la jugada.
+    var seguir by remember { mutableStateOf(false) }
     var pie by remember { mutableStateOf<String?>(null) }
     var sincronizar by remember { mutableStateOf(false) }
     var editar by remember { mutableStateOf<Evento?>(null) }
     var anotado by remember { mutableStateOf<Evento?>(null) }
     var primerSalto by remember { mutableStateOf(desde >= 0) }
+    val estadoLista = rememberLazyListState()
 
+    // La posición se lee del vídeo solo mientras avanza. En pausa vale la del último salto: así
+    // no se pierde mientras el vídeo se vuelve a preparar (al volver a la app o al girar).
     LaunchedEffect(vista) {
         while (true) {
             vista?.let { vv ->
                 runCatching {
-                    pos = vv.currentPosition.toLong()
-                    reproduciendo = vv.isPlaying
+                    val r = vv.isPlaying
+                    reproduciendo = r
+                    if (r) pos = vv.currentPosition.toLong()
                 }
             }
             delay(120)
@@ -214,29 +227,42 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
     }
     DisposableEffect(Unit) { onDispose { runCatching { vista?.stopPlayback() } } }
 
-    fun velocidad() {
+    fun ahoraMs(): Long =
+        vista?.let { vv -> runCatching { if (vv.isPlaying) vv.currentPosition.toLong() else null }.getOrNull() } ?: pos
+
+    fun aplicarVelocidad() {
         val mp = reproductor ?: return
-        runCatching { if (mp.isPlaying) mp.playbackParams = mp.playbackParams.setSpeed(if (lento) 0.5f else 1f) }
+        runCatching { mp.playbackParams = mp.playbackParams.setSpeed(if (lento) 0.5f else 1f) }
     }
-    fun irA(ms: Long, reproducir: Boolean = true) {
-        val destino = ms.coerceIn(0L, max(0L, dur - 50))
-        val mp = reproductor
+    fun reproducir() {
+        val vv = vista ?: return
+        runCatching { vv.start() }
+        aplicarVelocidad()
+    }
+    fun pausar() {
+        val vv = vista ?: return
         runCatching {
-            if (mp != null) mp.seekTo(destino, MediaPlayer.SEEK_CLOSEST) else vista?.seekTo(destino.toInt())
+            vv.pause()
+            pos = vv.currentPosition.toLong()
         }
+        reproduciendo = false
+    }
+    fun irA(ms: Long, seguirReproduciendo: Boolean) {
+        val tope = if (dur > 0) dur - 50 else Long.MAX_VALUE
+        val destino = ms.coerceIn(0L, max(0L, tope))
+        val mp = reproductor
+        val hecho = mp != null && runCatching { mp.seekTo(destino, MediaPlayer.SEEK_CLOSEST) }.isSuccess
+        if (!hecho) runCatching { vista?.seekTo(destino.toInt()) }
         pos = destino
-        if (reproducir) {
-            runCatching { vista?.start() }
-            velocidad()
-        }
+        if (seguirReproduciendo) reproducir()
     }
     fun alternar() {
         val vv = vista ?: return
-        runCatching {
-            if (vv.isPlaying) vv.pause() else {
-                vv.start()
-                velocidad()
-            }
+        if (runCatching { vv.isPlaying }.getOrDefault(false)) {
+            pausar()
+        } else {
+            seguir = false
+            reproducir()
         }
     }
 
@@ -244,11 +270,12 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
         p.eventos.mapNotNull { e -> p.msEnVideo(v, e)?.let { e to it } }.sortedBy { it.second }
     }
     val (tAhora, hAhora) = p.tiempoEnVideo(v, pos)
+    val sinSincronizar = !v.grabadoConApp && v.inicioMs == null
 
     fun anotar(k: String, ok: Boolean?) {
         val a = Catalogo.porClave[k]
         val elPie = if (a?.pie == true) pie ?: perfil.pie else null
-        val ms = if (seleccion != null) selMs else pos
+        val ms = if (seleccion != null) selMs else ahoraMs()
         val (t, h) = p.tiempoEnVideo(v, ms)
         val s = if (a != null) seleccion else null
         var nuevo: Evento? = null
@@ -261,17 +288,28 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
         seleccion = null
         vistaRaiz.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         anotado = nuevo
+        if (seguir) {
+            seguir = false
+            reproducir()
+        }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // Al marcar a Rafa, la lista sube hasta los botones de anotar.
+    LaunchedEffect(seleccion) {
+        if (seleccion != null) runCatching { estadoLista.animateScrollToItem(if (sinSincronizar) 1 else 0) }
+    }
+
+    val barra: @Composable () -> Unit = {
         BarraSuperior(
             v.nombre,
             "${p.rival} · ${if (v.grabadoConApp) "grabado con la app" else "de la galería"}",
             onAtras = { nav.atras() },
             acciones = { Boton("Sincronizar", { sincronizar = true }, tipo = Tipo.TEXTO) },
         )
-        Box(Modifier.fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxWidth().aspectRatio(aspecto)) {
+    }
+    val video: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            Box(Modifier.aspectRatio(aspecto).testTag("video")) {
                 AndroidView(
                     factory = { c ->
                         VideoView(c).apply {
@@ -285,9 +323,10 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                                         almacen.cambiarPartido(id) { q -> q.copy(videos = q.videos.map { if (it.id == v.id) it.copy(duracionMs = d) else it }) }
                                     }
                                 }
+                                error = null
                                 if (primerSalto) {
                                     primerSalto = false
-                                    irA(desde)
+                                    irA(desde, seguirReproduciendo = true)
                                 } else {
                                     runCatching { mp.seekTo(pos.coerceAtLeast(1), MediaPlayer.SEEK_CLOSEST) }
                                 }
@@ -302,13 +341,19 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
-                // Los aros de las jugadas que se ven ahora y el toque para marcar a Rafa.
+                // Los aros de las jugadas que se ven ahora y el toque para marcar a Rafa: si el
+                // vídeo iba, se para para elegir la acción con calma.
                 val visibles = jugadas.filter { (e, ms) -> e.rx != null && e.ry != null && pos in (ms - 1200)..(ms + 2500) }
                 Canvas(
                     Modifier.fillMaxSize().pointerInput(Unit) {
                         detectTapGestures { o ->
+                            val iba = vista?.let { vv -> runCatching { vv.isPlaying }.getOrDefault(false) } ?: false
+                            selMs = ahoraMs()
+                            if (iba) {
+                                pausar()
+                                seguir = true
+                            }
                             seleccion = (o.x / size.width).coerceIn(0f, 1f) to (o.y / size.height).coerceIn(0f, 1f)
-                            selMs = vista?.currentPosition?.toLong() ?: 0L
                         }
                     },
                 ) {
@@ -319,6 +364,7 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                     }
                     seleccion?.let { (x, y) ->
                         val c = Offset(x * size.width, y * size.height)
+                        drawCircle(Color.Black.copy(alpha = 0.45f), 24.dp.toPx(), c, style = Stroke(6.dp.toPx()))
                         drawCircle(Color.White, 24.dp.toPx(), c, style = Stroke(3.dp.toPx()))
                         drawCircle(Colores.Amarillo, 4.dp.toPx(), c)
                     }
@@ -333,18 +379,19 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
-                error?.let {
-                    Text(it, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
-                }
+            }
+            error?.let {
+                Text(it, Modifier.padding(16.dp), color = Color.White, textAlign = TextAlign.Center)
             }
         }
-        // Controles.
+    }
+    val controles: @Composable () -> Unit = {
         Column(Modifier.padding(horizontal = 12.dp)) {
             Slider(
                 value = arrastre ?: pos.toFloat(),
                 onValueChange = { arrastre = it },
                 onValueChangeFinished = {
-                    arrastre?.let { irA(it.toLong(), reproducir = reproduciendo) }
+                    arrastre?.let { irA(it.toLong(), seguirReproduciendo = reproduciendo) }
                     arrastre = null
                 },
                 valueRange = 0f..max(1f, dur.toFloat()),
@@ -361,23 +408,27 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                     lento,
                     {
                         lento = !lento
-                        velocidad()
+                        if (reproduciendo) aplicarVelocidad()
                     },
                 )
             }
             Text(
                 "${mmss(pos / 1000.0)} / ${mmss(dur / 1000.0)} · partido ${minutoDe(tAhora)}' (${hAhora}ª parte)",
+                Modifier.padding(bottom = 4.dp),
                 style = MaterialTheme.typography.bodySmall.merge(Cifras),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Box(Modifier.weight(1f)) {
+    }
+    val lista: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 Modifier.fillMaxSize(),
+                state = estadoLista,
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (!v.grabadoConApp && v.inicioMs == null) {
+                if (sinSincronizar) {
                     item {
                         Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -392,7 +443,7 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                 }
                 item {
                     Tarjeta(titulo = if (seleccion == null) "Anotar en este momento" else "Anotar: ${perfil.nombre} marcado") {
-                        TextoSuave("Pausa donde quieras, toca a ${perfil.nombre} en el vídeo y elige la acción.")
+                        TextoSuave("Toca a ${perfil.nombre} en el vídeo (se para solo) y elige la acción.")
                         SelectorPie(pie ?: perfil.pie, perfil.pie) { pie = if (it == perfil.pie) null else it }
                         RejillaAcciones(conteo(p.eventos.filter { it.video == v.id }), columnas = 3, alto = 64.dp) { k, ok -> anotar(k, ok) }
                     }
@@ -406,7 +457,7 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                             .background(if (cerca) MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) { FilaEvento(e, { irA(ms - 3000) }, extra = "en el vídeo ${mmss(ms / 1000.0)}") }
+                            Box(Modifier.weight(1f)) { FilaEvento(e, { irA(ms - 3000, seguirReproduciendo = true) }, extra = "en el vídeo ${mmss(ms / 1000.0)}") }
                             BotonIcono("✎", { editar = e }, descripcion = "Corregir", tam = 16)
                         }
                     }
@@ -425,9 +476,49 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
             }
         }
     }
+
+    // En vertical: vídeo arriba y lista debajo. En horizontal: vídeo a la izquierda y lista a la
+    // derecha. Las cuatro piezas son siempre las mismas, así el vídeo no se corta al girar.
+    Layout(listOf(barra, video, controles, lista), Modifier.fillMaxSize()) { piezas, c ->
+        val (mb, mv, mc, ml) = piezas
+        val w = c.maxWidth
+        val h = c.maxHeight
+        if (w > h && w >= 560.dp.roundToPx()) {
+            val wi = (w * 0.6f).roundToInt()
+            val wd = w - wi
+            val pc = mc.map { it.measure(Constraints.fixedWidth(wi)) }
+            val hc = pc.maxOfOrNull { it.height } ?: 0
+            val pv = mv.map { it.measure(Constraints.fixed(wi, (h - hc).coerceAtLeast(0))) }
+            val pb = mb.map { it.measure(Constraints.fixedWidth(wd)) }
+            val hb = pb.maxOfOrNull { it.height } ?: 0
+            val pl = ml.map { it.measure(Constraints.fixed(wd, (h - hb).coerceAtLeast(0))) }
+            layout(w, h) {
+                pv.forEach { it.place(0, 0) }
+                pc.forEach { it.place(0, (h - hc).coerceAtLeast(0)) }
+                pb.forEach { it.place(wi, 0) }
+                pl.forEach { it.place(wi, hb) }
+            }
+        } else {
+            val pb = mb.map { it.measure(Constraints.fixedWidth(w)) }
+            val hb = pb.maxOfOrNull { it.height } ?: 0
+            val pc = mc.map { it.measure(Constraints.fixedWidth(w)) }
+            val hc = pc.maxOfOrNull { it.height } ?: 0
+            val resto = (h - hb - hc).coerceAtLeast(0)
+            // El vídeo, a lo ancho; si es vertical, como mucho algo más de media pantalla.
+            val hv = min((w / aspecto).roundToInt(), (resto * 0.6f).roundToInt())
+            val pv = mv.map { it.measure(Constraints.fixed(w, hv)) }
+            val pl = ml.map { it.measure(Constraints.fixed(w, resto - hv)) }
+            layout(w, h) {
+                pb.forEach { it.place(0, 0) }
+                pv.forEach { it.place(0, hb) }
+                pc.forEach { it.place(0, hb + hv) }
+                pl.forEach { it.place(0, hb + hv + hc) }
+            }
+        }
+    }
     EditorDeEvento(almacen, p, editar) { editar = null }
     if (sincronizar) {
-        DialogoSincronizar(p, v, pos, onListo = { parte, inicioMs ->
+        DialogoSincronizar(p, v, ahoraMs(), onListo = { parte, inicioMs ->
             almacen.cambiarPartido(id) { q -> q.copy(videos = q.videos.map { if (it.id == v.id) it.copy(parte = parte, inicioMs = inicioMs) else it }) }
             sincronizar = false
         }, onCerrar = { sincronizar = false })

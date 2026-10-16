@@ -17,6 +17,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Una sola clave para todas las compilaciones: así cada APK nuevo se instala encima del
@@ -71,5 +72,11 @@ dependencies {
     testImplementation(libs.junit)
     // org.json real para las pruebas (en el móvil lo pone Android).
     testImplementation(libs.org.json)
+
+    // Recorrido por la app en un móvil virtual, con capturas (lo lanza CI).
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

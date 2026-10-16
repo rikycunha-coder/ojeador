@@ -35,7 +35,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +46,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,6 +70,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -257,7 +263,8 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
     }
 
     val cuenta = remember(p.eventos) { conteo(p.eventos) }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // Sin barras del sistema, pero apartándose de la muesca o el agujero de la cámara frontal.
+    Box(Modifier.fillMaxSize().background(Color.Black).windowInsetsPadding(WindowInsets.displayCutout)) {
         Row(Modifier.fillMaxSize()) {
             // Con balón.
             Column(Modifier.width(124.dp).fillMaxHeight().padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -267,7 +274,7 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                 }
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                Box(Modifier.align(Alignment.Center).aspectRatio(grabadora.aspecto)) {
+                Box(Modifier.align(Alignment.Center).aspectRatio(grabadora.aspecto).testTag("camara")) {
                     AndroidView(
                         factory = { c ->
                             PreviewView(c).apply {
@@ -536,7 +543,8 @@ private fun BarraCamara(
 private fun BotonGrabar(grabadora: Grabadora, modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier.size(64.dp).clip(CircleShape).background(Color(0x55000000)).border(4.dp, Color.White, CircleShape)
-            .clickable(enabled = grabadora.lista, onClick = onClick),
+            .clickable(enabled = grabadora.lista, onClick = onClick)
+            .semantics { contentDescription = if (grabadora.grabando) "Parar la grabación" else "Grabar" },
         contentAlignment = Alignment.Center,
     ) {
         if (grabadora.grabando) {
@@ -561,12 +569,14 @@ private fun BotonCamara(a: Accion, cuenta: IntArray?, modifier: Modifier, onAcci
             }
             Row(Modifier.fillMaxWidth().weight(1f)) {
                 Box(
-                    Modifier.weight(1f).fillMaxHeight().background(ex.bien.copy(alpha = 0.55f)).clickable { onAccion(true) },
+                    Modifier.weight(1f).fillMaxHeight().background(ex.bien.copy(alpha = 0.55f)).clickable { onAccion(true) }
+                        .semantics { contentDescription = "${a.nombre}: ${dual.first}" },
                     contentAlignment = Alignment.Center,
                 ) { Text("✓", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
                 Box(Modifier.width(2.dp).fillMaxHeight())
                 Box(
-                    Modifier.weight(1f).fillMaxHeight().background(ex.mal.copy(alpha = 0.55f)).clickable { onAccion(false) },
+                    Modifier.weight(1f).fillMaxHeight().background(ex.mal.copy(alpha = 0.55f)).clickable { onAccion(false) }
+                        .semantics { contentDescription = "${a.nombre}: ${dual.second}" },
                     contentAlignment = Alignment.Center,
                 ) { Text("✗", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
             }

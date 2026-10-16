@@ -1,0 +1,81 @@
+name: Probar en emulador
+
+# A mano: recorre la app en un móvil virtual (con cámara simulada) y publica las capturas,
+# los informes PDF y los registros en la versión «capturas» de Releases.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: emulador
+  cancel-in-progress: true
+
+jobs:
+  emulador:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar la app y el recorrido
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest 2>&1 | tee build.log
+
+      - name: Resumen del error de compilación
+        if: failure()
+        run: |
+          echo "=== RESUMEN DEL ERROR ==="
+          grep -E "^e: |FAILED" build.log | head -80 || true
+          grep -A 30 "What went wrong" build.log | head -120 || true
+          echo "=== FIN DEL RESUMEN ==="
+
+      - name: Activar KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Recorrido en el móvil virtual
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 4
+          ram-size: 4096M
+          disk-size: 6000M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated
+          disable-animations: true
+          script: bash .github/ci/emulador.sh
+
+      - name: Guardar lo recogido
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salida-emulador
+          path: salida-emulador
+          if-no-files-found: ignore
+
+      - name: Publicar en «Releases»
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -d salida-emulador ]; then
+            (cd salida-emulador && zip -qr ../capturas.zip .)
+            gh release delete capturas --yes --cleanup-tag || true
+            gh release create capturas capturas.zip --prerelease \
+              --title "Capturas del recorrido" \
+              --notes "Recorrido automático en un móvil virtual (${GITHUB_SHA::7})."
+          fi

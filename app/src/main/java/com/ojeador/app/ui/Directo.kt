@@ -36,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -298,12 +300,14 @@ fun CeldaAccion(a: Accion, cuenta: IntArray?, alto: Dp, onAccion: (String, Boole
             }
             Row(Modifier.fillMaxWidth().weight(1f)) {
                 Box(
-                    Modifier.weight(1f).fillMaxHeight().background(ex.bien.copy(alpha = 0.2f)).clickable { onAccion(a.k, true) },
+                    Modifier.weight(1f).fillMaxHeight().background(ex.bien.copy(alpha = 0.2f)).clickable { onAccion(a.k, true) }
+                        .semantics { contentDescription = "${a.nombre}: ${dual.first}" },
                     contentAlignment = Alignment.Center,
                 ) { Text("✓", color = ex.bien, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
                 Box(Modifier.width(2.dp).fillMaxHeight().background(cs.surfaceContainerHighest))
                 Box(
-                    Modifier.weight(1f).fillMaxHeight().background(ex.mal.copy(alpha = 0.2f)).clickable { onAccion(a.k, false) },
+                    Modifier.weight(1f).fillMaxHeight().background(ex.mal.copy(alpha = 0.2f)).clickable { onAccion(a.k, false) }
+                        .semantics { contentDescription = "${a.nombre}: ${dual.second}" },
                     contentAlignment = Alignment.Center,
                 ) { Text("✗", color = ex.mal, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
             }
