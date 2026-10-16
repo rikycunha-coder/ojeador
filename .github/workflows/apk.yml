@@ -28,7 +28,7 @@ jobs:
       - name: Pruebas y APK
         run: |
           set -o pipefail
-          ./gradlew --no-daemon testReleaseUnitTest assembleRelease 2>&1 | tee build.log
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease 2>&1 | tee build.log
 
       - name: Resumen del error
         if: failure()
