@@ -85,7 +85,10 @@ fun TabDatos(almacen: Almacen, p: Partido, perfil: Perfil) {
                 r.partes.forEachIndexed { i, parte ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${i + 1}ª parte", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                        Text("${cuenta(parte.buenas, "buena")} · ${cuenta(parte.fallos, "fallo")}", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (parte.buenas + parte.fallos == 0) "Sin acciones" else "${cuenta(parte.buenas, "buena")} · ${cuenta(parte.fallos, "fallo")}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                         Text(
                             pct(parte.pct),
                             Modifier.padding(start = 12.dp),

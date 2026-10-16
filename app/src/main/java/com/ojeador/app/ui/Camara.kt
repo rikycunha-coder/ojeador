@@ -315,7 +315,11 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                     AroSeleccion(seleccion)
                 }
                 BarraCamara(
-                    p, grabadora, pie ?: perfil.pie, perfil.pie,
+                    p, grabadora, pie ?: perfil.pie, perfil.pie, anotado,
+                    onDeshacer = { e ->
+                        almacen.cambiarPartido(id) { it.borrarEvento(e.id) }
+                        anotado = null
+                    },
                     onPie = { pie = if (it == perfil.pie) null else it },
                     onReloj = { almacen.cambiarPartido(id) { it.alternarReloj(System.currentTimeMillis()) } },
                     onMomento = { anotar("momento", null) },
@@ -360,25 +364,8 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                 }
                 anotado?.let { e ->
                     LaunchedEffect(e.id) {
-                        kotlinx.coroutines.delay(2200)
+                        kotlinx.coroutines.delay(3000)
                         anotado = null
-                    }
-                    Row(
-                        Modifier.align(Alignment.BottomCenter).padding(bottom = 86.dp).clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xE6000000)).padding(start = 12.dp, end = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(descripcion(e), color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "Deshacer",
-                            Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-                                almacen.cambiarPartido(id) { it.borrarEvento(e.id) }
-                                anotado = null
-                            }.padding(horizontal = 10.dp, vertical = 10.dp),
-                            color = Colores.Amarillo,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                        )
                     }
                 }
             }
@@ -466,6 +453,8 @@ private fun BarraCamara(
     grabadora: Grabadora,
     pie: String,
     habil: String,
+    anotado: Evento?,
+    onDeshacer: (Evento) -> Unit,
     onPie: (String) -> Unit,
     onReloj: () -> Unit,
     onMomento: () -> Unit,
@@ -506,7 +495,32 @@ private fun BarraCamara(
                 Text(" ${mmss(grabadora.duracionMs / 1000.0)}", color = Color.White, fontSize = 13.sp, style = Cifras)
             }
         }
-        Spacer(Modifier.weight(1f))
+        // La última anotación, aquí en la barra y no encima de la imagen: así, el siguiente toque
+        // para marcar a Rafa nunca cae en «Deshacer».
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            if (anotado != null) {
+                Row(
+                    Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xE6000000)).padding(start = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        Catalogo.etiqueta(anotado),
+                        Modifier.weight(1f, fill = false),
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "Deshacer",
+                        Modifier.clip(RoundedCornerShape(8.dp)).clickable { onDeshacer(anotado) }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = Colores.Amarillo,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
         // Pierna de la próxima jugada (vuelve sola a la hábil).
         PIES.forEach { (k, t) ->
             val activo = k == pie
@@ -584,7 +598,7 @@ private fun BotonCamara(a: Accion, cuenta: IntArray?, modifier: Modifier, onAcci
     } else {
         BotonOscuro(
             a.corto + if (total > 0) "\n$total" else "",
-            modifier.fillMaxHeight(),
+            modifier.fillMaxSize(),
             if (a.positiva) Colores.Verde.copy(alpha = 0.6f) else ex.mal.copy(alpha = 0.5f),
         ) { onAccion(null) }
     }

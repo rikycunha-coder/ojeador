@@ -1,6 +1,8 @@
 package com.ojeador.app
 
+import android.content.res.Configuration
 import android.os.Bundle
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -14,9 +16,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import com.ojeador.app.ui.PantallaCamara
 import com.ojeador.app.ui.PantallaFicha
 import com.ojeador.app.ui.PantallaInicio
@@ -43,6 +48,13 @@ class MainActivity : ComponentActivity() {
         val almacen = (application as OjeadorApp).almacen
         setContent { TemaOjeador { App(almacen) } }
     }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // La pantalla no se recrea al pasar a modo oscuro (o al revés): los iconos de la barra de
+        // estado se ponen aquí del color que toca, o quedarían invisibles sobre el fondo nuevo.
+        enableEdgeToEdge()
+    }
 }
 
 /** Navegación: lo que la pantalla abre, va encima; «atrás» vuelve a la anterior. */
@@ -63,6 +75,16 @@ fun App(almacen: Almacen) {
     }
     val actual = nav.actual
     BackHandler(enabled = nav.pila.size > 1 && actual !is Pantalla.Camara) { nav.atras() }
+    // Al cambiar de pantalla o de pestaña se cierra el teclado: si no, se queda abierto tapando
+    // media pantalla (por ejemplo, al crear un partido después de escribir el rival).
+    val foco = LocalFocusManager.current
+    val vista = LocalView.current
+    DisposableEffect(actual) {
+        onDispose {
+            foco.clearFocus(force = true)
+            vista.context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(vista.windowToken, 0)
+        }
+    }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (actual is Pantalla.Camara) {
             // La cámara ocupa toda la pantalla, también bajo las barras del sistema.

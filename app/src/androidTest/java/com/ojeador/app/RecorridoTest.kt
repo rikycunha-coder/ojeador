@@ -5,10 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
+import android.view.WindowInsets
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.click
@@ -65,6 +67,8 @@ class RecorridoTest {
         paso("inicio") { captura("inicio") }
         paso("ejemplo") {
             clic(hasText("UE Ejemplo", substring = true))
+            // La primera vez que se abre un partido, el móvil virtual tarda en dibujarlo.
+            SystemClock.sleep(2500)
             captura("ejemplo-directo")
             bajar()
             captura("ejemplo-directo-2")
@@ -98,6 +102,8 @@ class RecorridoTest {
             regla.onNode(hasText("Rival") and hasSetTextAction()).performTextInput("CE Prueba")
             clic(hasText("Crear partido"))
             id = almacen.datos.actual
+            // El teclado con el que se escribió el rival no se queda abierto encima del directo.
+            esperar(3000) { !tecladoVisible() }
             captura("directo")
             clic(hasText("Empezar", substring = true))
             accion("Pase: Bueno")
@@ -278,6 +284,10 @@ class RecorridoTest {
         }
         clic(m)
         SystemClock.sleep(400)
+    }
+
+    private fun tecladoVisible(): Boolean = Build.VERSION.SDK_INT >= 30 && regla.runOnUiThread {
+        regla.activity.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
     }
 
     /** Las claves de las anotaciones del partido, en el orden en que se guardaron. */

@@ -347,20 +347,27 @@ object InformePdf {
             while (resto.isNotEmpty()) {
                 // Dos columnas que llenan lo que queda de página; lo demás sigue en la siguiente.
                 if (h.libre() < 4 * alto + 4f) h.nueva()
-                val porColumna = ((h.libre() - 4f) / alto).toInt()
+                var fila = alto
+                var porColumna = ((h.libre() - 4f) / fila).toInt()
+                // Si en la página siguiente solo quedarían unas pocas, se aprietan un poco en esta.
+                val todas = (resto.size + 1) / 2
+                if (todas > porColumna && todas - porColumna <= 3 && (h.libre() - 4f) / todas >= 10f) {
+                    porColumna = todas
+                    fila = (h.libre() - 4f) / todas
+                }
                 val bloque = resto.take(porColumna * 2)
                 resto = resto.drop(bloque.size)
                 val filas = (bloque.size + 1) / 2
                 bloque.forEachIndexed { i, e ->
                     val x = h.margen + (i / filas) * (col + 16f)
-                    val y = h.y + (i % filas) * alto + 8f
+                    val y = h.y + (i % filas) * fila + 8f
                     h.c.drawText("${minutoDe(e.t)}'", x, y, pintura(GRIS, 8f, negrita = true))
                     var t = linea(e)
                     val p8 = pintura(TINTA, 8f)
                     while (p8.measureText(t) > col - 30f && t.length > 4) t = t.dropLast(2) + "…"
                     h.c.drawText(t, x + 24f, y, p8)
                 }
-                h.y += filas * alto + 4f
+                h.y += filas * fila + 4f
             }
         }
     }
@@ -409,7 +416,8 @@ object InformePdf {
         h.cabecera("INFORME DE TEMPORADA", perfil.nombre, "${perfil.club} · ${perfil.categoria}", fechaCorta(hoy()))
 
         h.seccion("Ficha")
-        h.fichas(fichaJugador(perfil))
+        val ficha = fichaJugador(perfil)
+        h.fichas(ficha)
 
         h.seccion("La temporada en números")
         h.kpis(
@@ -471,7 +479,7 @@ object InformePdf {
                 listOf(
                     fechaCorta(p.fecha),
                     p.rival,
-                    if (p.local) "$n-$riv" else "$riv-$n",
+                    if (!p.terminado) "en curso" else if (p.local) "$n-$riv" else "$riv-$n",
                     "${r.minutos.roundToInt()}'",
                     p.nota?.toString() ?: "—",
                     "${r.goles}",
@@ -484,13 +492,14 @@ object InformePdf {
             h.tabla(
                 listOf("Fecha", "Rival", "Res.", "Min", "Nota", "G", "A", "Pase", "Decisión", "P. débil"),
                 filas,
-                listOf(0.11f, 0.27f, 0.07f, 0.07f, 0.07f, 0.05f, 0.05f, 0.1f, 0.11f, 0.1f),
+                listOf(0.11f, 0.25f, 0.09f, 0.07f, 0.07f, 0.05f, 0.05f, 0.1f, 0.11f, 0.1f),
                 derecha = setOf(3, 4, 5, 6, 7, 8, 9),
             )
         }
         h.texto("", 4f)
+        val conEstimaciones = ficha.any { it.first == "Maduración" || it.first == "Estatura adulta orientativa" }
         h.texto(
-            "Las estimaciones de maduración (Moore 2015) tienen un margen de ±1 año y la estatura adulta orientativa, de ±8 cm. " +
+            (if (conEstimaciones) "Las estimaciones de maduración (Moore 2015) tienen un margen de ±1 año y la estatura adulta orientativa, de ±8 cm. " else "") +
                 "Los porcentajes suman todas las acciones anotadas de la temporada.",
             8f,
             GRIS,
