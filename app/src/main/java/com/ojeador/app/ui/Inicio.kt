@@ -210,7 +210,7 @@ private fun ResumenDeTemporada(d: Datos, onPdf: () -> Unit) {
         } else {
             val t = Temporada.resumen(reales, d.perfil.pie)
             val celdas = listOf(
-                Triple("${t.partidos}", if (t.partidos == 1) "partido" else "partidos", "${t.ganados} G · ${t.empatados} E · ${t.perdidos} P"),
+                Triple("${t.partidos}", if (t.partidos == 1) "partido" else "partidos", "${t.ganados}\u00A0G · ${t.empatados}\u00A0E · ${t.perdidos}\u00A0P"),
                 Triple("${t.minutos.roundToInt()}'", "minutos", "${t.titular} de titular"),
                 Triple("${t.goles} · ${t.asistencias}", "goles · asist.", null),
                 Triple(dec(t.notaMedia), "nota media", null),

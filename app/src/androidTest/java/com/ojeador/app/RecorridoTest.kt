@@ -148,6 +148,8 @@ class RecorridoTest {
     @Test
     fun estrecha() {
         paso("estrecha") {
+            // En claro, aunque el recorrido anterior se quedara a medias en modo oscuro.
+            comando("cmd uimode night no")
             SystemClock.sleep(2500)
             volverAlInicio()
             captura("estrecha-inicio")

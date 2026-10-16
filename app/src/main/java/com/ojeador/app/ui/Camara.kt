@@ -32,7 +32,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,8 +50,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,10 +75,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -116,7 +115,8 @@ private const val VIDA_SELECCION = 15_000L
 private val PANEL_IZQ = listOf("pase", "control", "regate", "tiro")
 private val PANEL_IZQ_SUELTAS = listOf("perdida", "pclave")
 private val PANEL_DER = listOf("decision", "duelo")
-private val PANEL_DER_SUELTAS = listOf("ofrece", "entrelineas", "desmarque", "presion", "recup")
+// «Desmarque», la palabra más larga, va sola en la última fila: a media anchura no cabe entera.
+private val PANEL_DER_SUELTAS = listOf("ofrece", "entrelineas", "presion", "recup", "desmarque")
 
 private fun permisosNecesarios(): List<String> = buildList {
     add(Manifest.permission.CAMERA)
@@ -372,9 +372,6 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                 PANEL_DER_SUELTAS.chunked(2).forEach { fila ->
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         fila.forEach { k -> BotonCamara(Catalogo.porClave.getValue(k), cuenta[k], Modifier.weight(1f)) { ok -> anotar(k, ok) } }
-                        if (fila.size == 1) {
-                            BotonOscuro("Más…", Modifier.weight(1f).fillMaxHeight(), Color(0x33FFFFFF)) { mas = true }
-                        }
                     }
                 }
             }
@@ -495,23 +492,25 @@ private fun BarraCamara(
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             if (anotado != null) {
                 Row(
-                    Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xE6000000)).padding(start = 10.dp),
+                    Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xE6000000)).padding(start = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         etiquetaBarra(anotado, habil),
                         Modifier.weight(1f, fill = false),
                         color = Color.White,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         "Deshacer",
-                        Modifier.clip(RoundedCornerShape(8.dp)).clickable { onDeshacer(anotado) }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        Modifier.clip(RoundedCornerShape(8.dp)).clickable { onDeshacer(anotado) }.padding(horizontal = 8.dp, vertical = 8.dp),
                         color = Colores.Amarillo,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.sp,
                     )
                 }
             }
@@ -635,20 +634,21 @@ private fun BotonCamara(a: Accion, cuenta: IntArray?, modifier: Modifier, onAcci
 
 @Composable
 private fun BotonOscuro(texto: String, modifier: Modifier, fondo: Color, onClick: () -> Unit) {
-    BoxWithConstraints(
+    Box(
         modifier.clip(RoundedCornerShape(10.dp)).background(fondo).clickable(onClick = onClick).padding(4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // La letra baja lo justo para que ninguna palabra se parta («Desmarque» no cabe a 12 sp en botones estrechos).
-        val medidor = rememberTextMeasurer()
-        val estilo = LocalTextStyle.current
-        val ancho = constraints.maxWidth
-        val tam = remember(texto, ancho, medidor, estilo) {
-            val palabras = texto.split(' ', '\n').filter { it.isNotEmpty() }
-            if (!constraints.hasBoundedWidth) 12
-            else (12 downTo 9).firstOrNull { t -> palabras.all { medidor.measure(it, estilo.copy(fontSize = t.sp)).size.width <= ancho } } ?: 9
-        }
-        Text(texto, color = Color.White, fontSize = tam.sp, textAlign = TextAlign.Center, lineHeight = (tam + 2).sp, maxLines = 3)
+        // Tantas líneas como palabras: una palabra que no cabe entera se partiría y daría una línea
+        // de más, así que la letra baja hasta que quepa (letra grande del sistema, botones estrechos).
+        Text(
+            texto,
+            color = Color.White,
+            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 12.sp, stepSize = 0.5.sp),
+            letterSpacing = 0.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 1.15.em,
+            maxLines = texto.split(' ', '\n').count { it.isNotBlank() }.coerceAtLeast(1),
+        )
     }
 }
 
