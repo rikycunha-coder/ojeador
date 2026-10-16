@@ -26,12 +26,28 @@ adb install -r -g "$APP"
 adb install -r -g "$PRUEBA"
 adb logcat -c || true
 
-adb shell am instrument -w -r -e class com.ojeador.app.RecorridoTest \
+# Saca las capturas que dejó la prueba en el móvil a la carpeta indicada ($1, dentro de $OUT).
+recoger() {
+  mkdir -p "$OUT/$1"
+  adb exec-out run-as com.ojeador.app tar cf - -C files capturas > "$OUT/capturas.tar" 2>> "$OUT/tar-error.txt"
+  tar xf "$OUT/capturas.tar" -C "$OUT/$1" && rm -f "$OUT/capturas.tar"
+}
+
+adb shell am instrument -w -r -e class com.ojeador.app.RecorridoTest#recorrido \
   com.ojeador.app.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/instrument.txt" 2>&1
 tail -n 80 "$OUT/instrument.txt"
+recoger .
 
-adb exec-out run-as com.ojeador.app tar cf - -C files capturas > "$OUT/capturas.tar" 2> "$OUT/tar-error.txt"
-tar xf "$OUT/capturas.tar" -C "$OUT" && rm -f "$OUT/capturas.tar"
+# Otra vez la cámara y el directo, ahora como en un móvil de 360 dp de ancho (densidad 3,0).
+adb shell wm density 480
+sleep 10
+adb shell input keyevent KEYCODE_HOME || true
+adb shell am instrument -w -r -e class com.ojeador.app.RecorridoTest#estrecha \
+  com.ojeador.app.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/instrument-estrecha.txt" 2>&1
+tail -n 30 "$OUT/instrument-estrecha.txt"
+recoger estrecha
+adb shell wm density reset || true
+
 adb logcat -d > "$OUT/logcat.txt" 2>&1 || true
 adb shell screencap -p /sdcard/final.png && adb pull /sdcard/final.png "$OUT/final.png" || true
 ls -la "$OUT" "$OUT/capturas" || true
@@ -43,5 +59,10 @@ if grep -qE "FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=" "$OUT
 fi
 if ! grep -q "OK (1 test)" "$OUT/instrument.txt"; then
   echo "=== El recorrido no terminó bien ==="
+  exit 1
+fi
+if ! grep -q "OK (1 test)" "$OUT/instrument-estrecha.txt"; then
+  echo "=== La prueba en pantalla estrecha no terminó bien ==="
+  grep -E "Pasos con fallos|^[a-z-]+: |shortMsg=" "$OUT/instrument-estrecha.txt" | head -40 || true
   exit 1
 fi

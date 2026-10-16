@@ -32,6 +32,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +52,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,6 +76,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -266,8 +269,9 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
     // Sin barras del sistema, pero apartándose de la muesca o el agujero de la cámara frontal.
     Box(Modifier.fillMaxSize().background(Color.Black).windowInsetsPadding(WindowInsets.displayCutout)) {
         Row(Modifier.fillMaxSize()) {
-            // Con balón.
+            // Con balón, y encima con qué pierna va la próxima jugada.
             Column(Modifier.width(124.dp).fillMaxHeight().padding(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SelectorPie(pie ?: perfil.pie, perfil.pie, Modifier.fillMaxWidth().height(34.dp)) { pie = if (it == perfil.pie) null else it }
                 PANEL_IZQ.forEach { k -> BotonCamara(Catalogo.porClave.getValue(k), cuenta[k], Modifier.weight(1f)) { ok -> anotar(k, ok) } }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PANEL_IZQ_SUELTAS.forEach { k -> BotonCamara(Catalogo.porClave.getValue(k), cuenta[k], Modifier.weight(1f)) { ok -> anotar(k, ok) } }
@@ -313,14 +317,28 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                         modifier = Modifier.fillMaxSize(),
                     )
                     AroSeleccion(seleccion)
+                    // Los avisos van dentro de la imagen: con franjas negras arriba y abajo, quedaban
+                    // a caballo entre la imagen y la franja. No recogen toques: el toque llega a la imagen.
+                    if (!grabadora.grabando) {
+                        val libre = remember(grabadora.grabando) { espacioLibre(ctx) }
+                        val mbMin = if (perfil.calidadVideo == "FHD") 92.0 else 46.0
+                        val minutos = (libre / 1_048_576.0 / mbMin).roundToInt()
+                        Aviso(
+                            "Libre: ${dec(libre / 1_073_741_824.0)} GB · unos $minutos min en ${if (perfil.calidadVideo == "FHD") "Full HD" else "HD"}",
+                            Color.White,
+                            Modifier.align(Alignment.BottomStart),
+                        )
+                    }
+                    if (seleccion == null) {
+                        Aviso("Toca a ${perfil.nombre} y luego la acción", Colores.Amarillo, Modifier.align(Alignment.BottomEnd))
+                    }
                 }
                 BarraCamara(
-                    p, grabadora, pie ?: perfil.pie, perfil.pie, anotado,
+                    p, grabadora, perfil.pie, anotado,
                     onDeshacer = { e ->
                         almacen.cambiarPartido(id) { it.borrarEvento(e.id) }
                         anotado = null
                     },
-                    onPie = { pie = if (it == perfil.pie) null else it },
                     onReloj = { almacen.cambiarPartido(id) { it.alternarReloj(System.currentTimeMillis()) } },
                     onMomento = { anotar("momento", null) },
                     onMas = { mas = true },
@@ -333,27 +351,6 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                 ) {
                     if (grabadora.grabando) grabadora.parar()
                     else if (!grabadora.grabar(conAudio, ::alGuardar)) ctx.aviso(grabadora.error ?: "La cámara aún no está lista")
-                }
-                if (!grabadora.grabando) {
-                    val libre = remember(grabadora.grabando) { espacioLibre(ctx) }
-                    val mbMin = if (perfil.calidadVideo == "FHD") 92.0 else 46.0
-                    val minutos = (libre / 1_048_576.0 / mbMin).roundToInt()
-                    Text(
-                        "Libre: ${dec(libre / 1_073_741_824.0)} GB · unos $minutos min en ${if (perfil.calidadVideo == "FHD") "Full HD" else "HD"}",
-                        Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(8.dp))
-                            .background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = Color.White,
-                        fontSize = 11.sp,
-                    )
-                }
-                if (seleccion == null) {
-                    Text(
-                        "Toca a ${perfil.nombre} y luego la acción",
-                        Modifier.align(Alignment.BottomEnd).padding(10.dp).clip(RoundedCornerShape(8.dp))
-                            .background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = Colores.Amarillo,
-                        fontSize = 11.sp,
-                    )
                 }
                 grabadora.error?.let {
                     Text(
@@ -451,11 +448,9 @@ private fun BoxScope.AroSeleccion(sel: Seleccion?) {
 private fun BarraCamara(
     p: Partido,
     grabadora: Grabadora,
-    pie: String,
     habil: String,
     anotado: Evento?,
     onDeshacer: (Evento) -> Unit,
-    onPie: (String) -> Unit,
     onReloj: () -> Unit,
     onMomento: () -> Unit,
     onMas: () -> Unit,
@@ -504,7 +499,7 @@ private fun BarraCamara(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        Catalogo.etiqueta(anotado),
+                        etiquetaBarra(anotado, habil),
                         Modifier.weight(1f, fill = false),
                         color = Color.White,
                         fontSize = 12.sp,
@@ -521,21 +516,6 @@ private fun BarraCamara(
                 }
             }
         }
-        // Pierna de la próxima jugada (vuelve sola a la hábil).
-        PIES.forEach { (k, t) ->
-            val activo = k == pie
-            val otra = k != habil && activo
-            Text(
-                if (k == "C") "Cab." else t.take(3) + ".",
-                Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(if (otra) Colores.Amarillo else if (activo) Color(0x55FFFFFF) else Color(0x22FFFFFF))
-                    .clickable { onPie(k) }
-                    .padding(horizontal = 9.dp, vertical = 7.dp),
-                color = if (otra) Color.Black else Color.White,
-                fontSize = 13.sp,
-                fontWeight = if (activo) FontWeight.Bold else FontWeight.Normal,
-            )
-        }
         Text(
             "★",
             Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x22FFFFFF)).clickable(onClick = onMomento)
@@ -551,6 +531,55 @@ private fun BarraCamara(
             fontSize = 13.sp,
         )
     }
+}
+
+/** «Pase ✓», «Regate ✗ · Izq.»: la última anotación en pocas letras, para que quepa en la barra. */
+private fun etiquetaBarra(e: Evento, habil: String): String {
+    if (e.k == "momento") return "★ Momento"
+    val a = Catalogo.porClave[e.k] ?: return Catalogo.nombre(e.k)
+    val marca = when (e.ok) {
+        true -> " ✓"
+        false -> " ✗"
+        null -> ""
+    }
+    val otraPierna = e.pie?.takeIf { it != habil }?.let { " · " + if (it == "C") "Cab." else PIES.getValue(it).take(3) + "." }
+    return a.corto + marca + otraPierna.orEmpty()
+}
+
+/** Con qué pierna va la próxima jugada; vuelve sola a la hábil y, si no es la hábil, se ve en amarillo. */
+@Composable
+private fun SelectorPie(pie: String, habil: String, modifier: Modifier, onPie: (String) -> Unit) {
+    Row(modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x26FFFFFF))) {
+        PIES.forEach { (k, t) ->
+            val activo = k == pie
+            val otra = k != habil && activo
+            Box(
+                Modifier.weight(1f).fillMaxHeight()
+                    .background(if (otra) Colores.Amarillo else if (activo) Color(0x55FFFFFF) else Color.Transparent)
+                    .clickable { onPie(k) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (k == "C") "Cab." else t.take(3) + ".",
+                    color = if (otra) Color.Black else Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = if (activo) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** Texto pequeño sobre la imagen de la cámara, con fondo oscuro para leerse sobre el césped. */
+@Composable
+private fun Aviso(texto: String, color: Color, modifier: Modifier) {
+    Text(
+        texto,
+        modifier.padding(8.dp).clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 4.dp),
+        color = color,
+        fontSize = 11.sp,
+    )
 }
 
 @Composable
@@ -606,11 +635,20 @@ private fun BotonCamara(a: Accion, cuenta: IntArray?, modifier: Modifier, onAcci
 
 @Composable
 private fun BotonOscuro(texto: String, modifier: Modifier, fondo: Color, onClick: () -> Unit) {
-    Box(
+    BoxWithConstraints(
         modifier.clip(RoundedCornerShape(10.dp)).background(fondo).clickable(onClick = onClick).padding(4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(texto, color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center, lineHeight = 14.sp, maxLines = 3)
+        // La letra baja lo justo para que ninguna palabra se parta («Desmarque» no cabe a 12 sp en botones estrechos).
+        val medidor = rememberTextMeasurer()
+        val estilo = LocalTextStyle.current
+        val ancho = constraints.maxWidth
+        val tam = remember(texto, ancho, medidor, estilo) {
+            val palabras = texto.split(' ', '\n').filter { it.isNotEmpty() }
+            if (!constraints.hasBoundedWidth) 12
+            else (12 downTo 9).firstOrNull { t -> palabras.all { medidor.measure(it, estilo.copy(fontSize = t.sp)).size.width <= ancho } } ?: 9
+        }
+        Text(texto, color = Color.White, fontSize = tam.sp, textAlign = TextAlign.Center, lineHeight = (tam + 2).sp, maxLines = 3)
     }
 }
 

@@ -102,8 +102,10 @@ class RecorridoTest {
             regla.onNode(hasText("Rival") and hasSetTextAction()).performTextInput("CE Prueba")
             clic(hasText("Crear partido"))
             id = almacen.datos.actual
-            // El teclado con el que se escribió el rival no se queda abierto encima del directo.
-            esperar(3000) { !tecladoVisible() }
+            // El teclado con el que se escribió el rival no se queda abierto encima del directo
+            // (tampoco si aún se estaba abriendo al tocar «Crear partido»).
+            SystemClock.sleep(2500)
+            esperar(4000) { !tecladoVisible() }
             captura("directo")
             clic(hasText("Empezar", substring = true))
             accion("Pase: Bueno")
@@ -139,21 +141,54 @@ class RecorridoTest {
         if (fallos.isNotEmpty()) fail("Pasos con fallos:\n" + fallos.joinToString("\n"))
     }
 
+    /**
+     * Las pantallas más apretadas en un móvil estrecho (360 dp de ancho, como muchos Samsung).
+     * CI la lanza aparte, después del recorrido y con la densidad de pantalla cambiada.
+     */
+    @Test
+    fun estrecha() {
+        paso("estrecha") {
+            SystemClock.sleep(2500)
+            volverAlInicio()
+            captura("estrecha-inicio")
+            clic(hasText("CE Prueba", substring = true))
+            SystemClock.sleep(1500)
+            captura("estrecha-directo")
+            bajar()
+            captura("estrecha-directo-2")
+            pestana("Datos")
+            captura("estrecha-datos")
+            clic(hasText("Cámara", substring = true))
+            esperar(30_000) { existe(hasContentDescription("Grabar")) }
+            SystemClock.sleep(4000)
+            captura("estrecha-camara")
+            grabar()
+            SystemClock.sleep(2000)
+            regla.onNodeWithTag("camara").performTouchInput { click(Offset(width * 0.5f, height * 0.5f)) }
+            clic(hasText("Izq."))
+            clic(hasContentDescription("Regate / 1 contra 1: Pierde"))
+            captura("estrecha-camara-anotado")
+            clic(hasText("Más"))
+            captura("estrecha-camara-mas")
+            clic(hasContentDescription("Cerrar"))
+            clic(hasContentDescription("Parar la grabación"))
+            SystemClock.sleep(3000)
+            clic(hasContentDescription("Salir"))
+        }
+        if (fallos.isNotEmpty()) fail("Pasos con fallos:\n" + fallos.joinToString("\n"))
+    }
+
     /** Graba unos segundos con la cámara, marca a Rafa, anota y para. */
     private fun camara(id: String) {
         clic(hasText("Cámara", substring = true))
         esperar(30_000) { existe(hasContentDescription("Grabar")) }
         SystemClock.sleep(4000)
         captura("camara")
-        var intentos = 0
-        while (!existe(hasContentDescription("Parar la grabación")) && intentos++ < 10) {
-            runCatching { regla.onNode(hasContentDescription("Grabar")).performClick() }
-            SystemClock.sleep(1500)
-            regla.waitForIdle()
-        }
-        check(existe(hasContentDescription("Parar la grabación"))) { "la cámara no empezó a grabar" }
+        grabar()
         SystemClock.sleep(3000)
         regla.onNodeWithTag("camara").performTouchInput { click(Offset(width * 0.62f, height * 0.55f)) }
+        // Con la izquierda: la pierna se elige encima de las acciones con balón.
+        clic(hasText("Izq."))
         captura("camara-marcado")
         clic(hasContentDescription("Pase: Bueno"))
         captura("camara-anotado")
@@ -168,6 +203,8 @@ class RecorridoTest {
         esperar(30_000) { almacen.partido(id)?.videos?.isNotEmpty() == true }
         val conVideo = almacen.partido(id)?.eventos?.filter { it.video != null }?.map { it.k }
         check(conVideo == listOf("pase", "decision")) { "con la cámara se guardó $conVideo" }
+        val pierna = almacen.partido(id)?.eventos?.firstOrNull { it.video != null }?.pie
+        check(pierna == "I") { "el pase con la izquierda se guardó con la pierna $pierna" }
         SystemClock.sleep(1500)
         captura("camara-guardado")
         val v = almacen.partido(id)?.videos?.firstOrNull()
@@ -235,6 +272,17 @@ class RecorridoTest {
     }
 
     // ---- Ayudas ----
+
+    /** Pulsa «Grabar» hasta que graba: la cámara simulada tarda en estar lista. */
+    private fun grabar() {
+        var intentos = 0
+        while (!existe(hasContentDescription("Parar la grabación")) && intentos++ < 10) {
+            runCatching { regla.onNode(hasContentDescription("Grabar")).performClick() }
+            SystemClock.sleep(1500)
+            regla.waitForIdle()
+        }
+        check(existe(hasContentDescription("Parar la grabación"))) { "la cámara no empezó a grabar" }
+    }
 
     private fun paso(nombre: String, bloque: () -> Unit) {
         try {

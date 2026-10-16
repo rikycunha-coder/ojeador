@@ -75,6 +75,7 @@ jobs:
           name: salida-emulador
           path: salida-emulador
           if-no-files-found: ignore
+          retention-days: 1
 
       - name: Publicar en «Releases»
         if: always()

@@ -2,6 +2,7 @@ package com.ojeador.app
 
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -22,6 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.ojeador.app.ui.PantallaCamara
 import com.ojeador.app.ui.PantallaFicha
 import com.ojeador.app.ui.PantallaInicio
@@ -29,6 +33,7 @@ import com.ojeador.app.ui.PantallaNuevoPartido
 import com.ojeador.app.ui.PantallaPartido
 import com.ojeador.app.ui.PantallaRevisar
 import com.ojeador.app.ui.TemaOjeador
+import com.ojeador.app.ui.actividad
 
 /** Las pantallas de la app. La pila de pantallas vive en [App]. */
 sealed interface Pantalla {
@@ -82,7 +87,10 @@ fun App(almacen: Almacen) {
     DisposableEffect(actual) {
         onDispose {
             foco.clearFocus(force = true)
-            vista.context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(vista.windowToken, 0)
+            cerrarTeclado(vista)
+            // Si el teclado aún se estaba abriendo, su animación gana al cierre y se queda arriba:
+            // se vuelve a mirar un par de veces, salvo que ya se esté escribiendo en la pantalla nueva.
+            for (ms in longArrayOf(400, 900, 1500, 2200)) vista.postDelayed({ if (tecladoSinUso(vista)) cerrarTeclado(vista) }, ms)
         }
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -103,3 +111,13 @@ fun App(almacen: Almacen) {
         }
     }
 }
+
+private fun cerrarTeclado(vista: View) {
+    vista.context.actividad()?.window?.let { WindowCompat.getInsetsController(it, vista).hide(WindowInsetsCompat.Type.ime()) }
+    vista.context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(vista.windowToken, 0)
+}
+
+/** El teclado está a la vista sin ningún campo de texto que lo use. */
+private fun tecladoSinUso(vista: View): Boolean =
+    ViewCompat.getRootWindowInsets(vista)?.isVisible(WindowInsetsCompat.Type.ime()) == true &&
+        vista.context.getSystemService(InputMethodManager::class.java)?.isAcceptingText != true
