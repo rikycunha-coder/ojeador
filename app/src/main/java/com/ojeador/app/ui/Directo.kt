@@ -2,7 +2,13 @@ package com.ojeador.app.ui
 
 import android.graphics.RectF
 import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -29,9 +36,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ojeador.app.Almacen
 import com.ojeador.app.data.Accion
 import com.ojeador.app.data.Catalogo
@@ -65,6 +75,7 @@ import com.ojeador.app.data.mmss
 import com.ojeador.app.data.segParte
 import com.ojeador.app.data.segPartido
 import com.ojeador.app.logic.Estadisticas
+import kotlinx.coroutines.launch
 
 @Composable
 fun TabDirecto(almacen: Almacen, p: Partido, perfil: Perfil) {
@@ -86,13 +97,28 @@ fun TabDirecto(almacen: Almacen, p: Partido, perfil: Perfil) {
         vista.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
     }
     val cuenta = remember(p.eventos) { conteo(p.eventos) }
+    // Con el partido en juego se abre ya en las acciones, con el reloj fijo arriba.
+    val lista = rememberLazyListState(initialFirstVisibleItemIndex = if (!p.terminado && !sinEmpezar(p)) 1 else 0)
+    val fijo by remember { derivedStateOf { lista.firstVisibleItemIndex > 0 } }
+    val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),
+            state = lista,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { MarcadorPartido(almacen, p) { k -> anotar(k, null) } }
+            item(key = "marcador") {
+                MarcadorPartido(
+                    almacen,
+                    p,
+                    // Al pitido inicial (y al empezar la 2ª parte), la pantalla baja sola a las acciones.
+                    onEmpezar = { scope.launch { lista.animateScrollToItem(1) } },
+                ) { k -> anotar(k, null) }
+            }
+            stickyHeader(key = "franja") { _ ->
+                FranjaMarcador(almacen, p, perfil, fijo) { scope.launch { lista.animateScrollToItem(0) } }
+            }
             if (!p.enCampo && p.reloj.enMarcha && !p.terminado) {
                 item {
                     Row(
@@ -128,13 +154,13 @@ fun TabDirecto(almacen: Almacen, p: Partido, perfil: Perfil) {
 
 /** El marcador del estadio: equipos y goles, el reloj grande y lo que se toca durante el partido. */
 @Composable
-fun MarcadorPartido(almacen: Almacen, p: Partido, onSistema: (String) -> Unit) {
+fun MarcadorPartido(almacen: Almacen, p: Partido, onEmpezar: () -> Unit = {}, onSistema: (String) -> Unit) {
     var confirmarFin by remember { mutableStateOf(false) }
     val ahora = rememberAhora(p.reloj.enMarcha)
     val ex = LocalExtra.current
     val blanco = ex.enPizarra
     val nosotros = "EDFOR ${p.equipo}"
-    val sinEmpezar = p.reloj.parte == 1 && p.reloj.seg1 == 0.0 && !p.reloj.enMarcha
+    val sinEmpezar = sinEmpezar(p)
     Column(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(ex.pizarra).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -167,48 +193,32 @@ fun MarcadorPartido(almacen: Almacen, p: Partido, onSistema: (String) -> Unit) {
                     color = if (p.reloj.enMarcha) blanco else blanco.copy(alpha = 0.55f),
                     maxLines = 1,
                 )
-                val estado = when {
-                    p.terminado -> "Partido terminado"
-                    sinEmpezar -> "Ponlo en marcha al pitido inicial"
-                    p.enAnadido(ahora) -> "${p.reloj.parte}ª parte, añadido +${mmss(p.segParte(ahora) - p.minParte * 60)}"
-                    p.reloj.enMarcha -> "${p.reloj.parte}ª parte, en juego"
-                    else -> "${p.reloj.parte}ª parte, parado"
-                }
-                Text(estado, style = MaterialTheme.typography.bodySmall, color = blanco.copy(alpha = 0.7f))
+                Text(estadoReloj(p, ahora), style = MaterialTheme.typography.bodySmall, color = blanco.copy(alpha = 0.7f))
             }
             if (!p.terminado) {
                 val enMarcha = p.reloj.enMarcha
+                val empieza = !enMarcha && (sinEmpezar || (p.reloj.parte == 2 && p.reloj.seg2 == 0.0))
                 BotonPizarra(
                     when {
                         enMarcha -> "Parar"
-                        sinEmpezar || (p.reloj.parte == 2 && p.reloj.seg2 == 0.0) -> "Empezar"
+                        empieza -> "Empezar"
                         else -> "Seguir"
                     },
                     icono = if (enMarcha) Iconos.Pausa else Iconos.Play,
                     fondo = if (enMarcha) blanco.copy(alpha = 0.14f) else Colores.Amarillo,
                     color = if (enMarcha) blanco else Colores.SobreAmarillo,
                     modifier = Modifier.height(52.dp),
-                ) { almacen.cambiarPartido(p.id) { it.alternarReloj(System.currentTimeMillis()) } }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(blanco.copy(alpha = 0.08f)).padding(start = 14.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(10.dp).clip(CircleShape).background(if (p.enCampo) ex.bien else blanco.copy(alpha = 0.35f)))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                Text(if (p.enCampo) "En el campo" else "Fuera del campo", style = MaterialTheme.typography.labelLarge, color = blanco)
-                Text("${mmss(p.jugado(ahora))} jugados", style = MaterialTheme.typography.bodySmall.merge(Cifras), color = blanco.copy(alpha = 0.65f))
-            }
-            TextButton(onClick = { almacen.cambiarPartido(p.id) { it.alternarCampo(System.currentTimeMillis()) } }) {
-                Text(if (p.enCampo) "Sale" else "Entra", color = Colores.Amarillo, fontWeight = FontWeight.Bold)
+                ) {
+                    almacen.cambiarPartido(p.id) { it.alternarReloj(System.currentTimeMillis()) }
+                    if (empieza) onEmpezar()
+                }
             }
         }
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val f = blanco.copy(alpha = 0.10f)
-            BotonPizarra("Gol EDFOR", Iconos.Anadir, f, blanco, Modifier.weight(1f).fillMaxHeight()) { onSistema("golnos") }
-            BotonPizarra("Gol rival", Iconos.Anadir, f, blanco, Modifier.weight(1f).fillMaxHeight()) { onSistema("golriv") }
+            // Sin icono: en un móvil estrecho «EDFOR» no cabría entero al lado del «+».
+            BotonPizarra("Gol EDFOR", null, f, blanco, Modifier.weight(1f).fillMaxHeight()) { onSistema("golnos") }
+            BotonPizarra("Gol rival", null, f, blanco, Modifier.weight(1f).fillMaxHeight()) { onSistema("golriv") }
             if (!p.terminado) {
                 BotonPizarra(if (p.reloj.parte == 1) "Fin 1ª parte" else "Fin partido", null, f, blanco, Modifier.weight(1f).fillMaxHeight()) { confirmarFin = true }
             }
@@ -226,6 +236,93 @@ fun MarcadorPartido(almacen: Almacen, p: Partido, onSistema: (String) -> Unit) {
             },
             onNo = { confirmarFin = false },
         )
+    }
+}
+
+/** El partido aún no ha arrancado: el reloj nunca se ha puesto en marcha. */
+private fun sinEmpezar(p: Partido) = p.reloj.parte == 1 && p.reloj.seg1 == 0.0 && !p.reloj.enMarcha
+
+private fun estadoReloj(p: Partido, ahora: Long): String = when {
+    p.terminado -> "Partido terminado"
+    sinEmpezar(p) -> "Ponlo en marcha al pitido inicial"
+    p.enAnadido(ahora) -> "${p.reloj.parte}ª parte, añadido +${mmss(p.segParte(ahora) - p.minParte * 60)}"
+    p.reloj.enMarcha -> "${p.reloj.parte}ª parte, en juego"
+    else -> "${p.reloj.parte}ª parte, parado"
+}
+
+/**
+ * La franja de debajo del marcador: si Rafa está en el campo y sus minutos. Al bajar a las
+ * acciones se queda fija arriba ([fijo]) y pasa a enseñar el reloj y el resultado; tocarla
+ * vuelve al marcador entero.
+ */
+@Composable
+private fun FranjaMarcador(almacen: Almacen, p: Partido, perfil: Perfil, fijo: Boolean, onMarcador: () -> Unit) {
+    val ex = LocalExtra.current
+    val blanco = ex.enPizarra
+    val ahora = rememberAhora(p.reloj.enMarcha)
+    // El fondo de la pantalla detrás tapa lo que pasa por debajo cuando está fija.
+    Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(bottom = 8.dp)) {
+        AnimatedContent(
+            targetState = fijo,
+            modifier = Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(18.dp)).background(ex.pizarra),
+            transitionSpec = { fadeIn(tween(220, delayMillis = 60)) togetherWith fadeOut(tween(120)) },
+            label = "franja",
+        ) { arriba ->
+            if (arriba) {
+                Row(
+                    Modifier.fillMaxSize().clickable(onClickLabel = "Ver el marcador entero", onClick = onMarcador).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        mmss(p.segPartido(ahora)),
+                        style = Marcador.cifraPequena.copy(fontSize = 28.sp, lineHeight = 28.sp),
+                        color = if (p.reloj.enMarcha) blanco else blanco.copy(alpha = 0.55f),
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            estadoReloj(p, ahora),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = blanco.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(if (p.enCampo) ex.bien else blanco.copy(alpha = 0.35f)))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (p.enCampo) "${perfil.nombre} en el campo" else "${perfil.nombre} fuera del campo",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = blanco.copy(alpha = 0.6f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    NumeroAnimado(p.marcador().replace(" – ", "–"), Marcador.cifraPequena.copy(fontSize = 28.sp, lineHeight = 28.sp), blanco)
+                }
+            } else {
+                Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (p.enCampo) ex.bien else blanco.copy(alpha = 0.35f)))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (p.enCampo) "${perfil.nombre} en el campo" else "${perfil.nombre} fuera del campo",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = blanco,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text("${mmss(p.jugado(ahora))} jugados", style = MaterialTheme.typography.bodySmall.merge(Cifras), color = blanco.copy(alpha = 0.65f))
+                    }
+                    TextButton(onClick = { almacen.cambiarPartido(p.id) { it.alternarCampo(System.currentTimeMillis()) } }) {
+                        Text(if (p.enCampo) "Sale" else "Entra", color = Colores.Amarillo, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 

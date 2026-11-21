@@ -311,6 +311,8 @@ class RecorridoTest {
         comando("cmd uimode night yes")
         SystemClock.sleep(2500)
         captura("oscuro-inicio")
+        // Con el partido nuevo en la lista, el de ejemplo queda más abajo.
+        traer(hasText("UE Ejemplo", substring = true))
         clic(hasText("UE Ejemplo", substring = true))
         pestana("Datos")
         captura("oscuro-datos")
@@ -375,11 +377,7 @@ class RecorridoTest {
      */
     private fun accion(descripcion: String) {
         val m = hasContentDescription(descripcion)
-        if (existe(m)) {
-            regla.onAllNodes(m).onFirst().performScrollTo()
-        } else {
-            regla.onNode(hasScrollAction() and hasAnyDescendant(m)).performScrollToNode(m)
-        }
+        traer(m)
         clic(m)
         SystemClock.sleep(400)
     }
@@ -416,13 +414,19 @@ class RecorridoTest {
         }
     }
 
-    /** Trae a la vista algo que está más abajo en una lista que se desliza. */
+    /** Las listas que se deslizan de arriba abajo (no las tiras de opciones que van de lado). */
+    private val listaVertical = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+
+    /** Trae a la vista algo que está más abajo (o más arriba) en una lista que se desliza. */
     private fun traer(m: SemanticsMatcher) {
-        esperar(10_000) { existe(m) || existe(hasScrollAction()) }
-        // En una lista perezosa, lo de más abajo aún no existe: entonces se busca deslizando la lista.
-        val lista = if (existe(hasScrollAction() and hasAnyDescendant(m))) hasScrollAction() and hasAnyDescendant(m) else hasScrollAction()
-        runCatching { regla.onAllNodes(lista).onFirst().performScrollToNode(m) }
-            .onFailure { if (existe(m)) regla.onAllNodes(m).onFirst().performScrollTo() else throw it }
+        esperar(10_000) { existe(m) || existe(listaVertical) }
+        if (existe(m)) {
+            regla.onAllNodes(m).onFirst().performScrollTo()
+        } else {
+            // En una lista perezosa, lo que queda lejos aún no existe: se busca deslizando la lista.
+            val lista = if (existe(listaVertical and hasAnyDescendant(m))) listaVertical and hasAnyDescendant(m) else listaVertical
+            regla.onAllNodes(lista).onFirst().performScrollToNode(m)
+        }
         regla.waitForIdle()
     }
 

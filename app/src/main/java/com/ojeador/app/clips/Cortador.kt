@@ -233,7 +233,9 @@ object Cortador {
                 }
             }
             transformer = Transformer.Builder(ctx)
+                // H.264 y AAC: lo que aceptan sin rechistar WhatsApp, Instagram, TikTok y YouTube.
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
+                .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         mano.removeCallbacks(sondeo)
@@ -283,8 +285,15 @@ object Cortador {
         }
     }
 
-    /** La carpeta de trabajo de los clips (se comparte desde aquí en Android 9 o anterior). */
-    fun carpeta(ctx: Context): File = File(ctx.cacheDir, "clips").apply { mkdirs() }
+    /**
+     * La carpeta de trabajo de los clips (en Android 9 o anterior se comparten desde aquí). Lo
+     * que lleva ahí más de un día se borra.
+     */
+    fun carpeta(ctx: Context): File = File(ctx.cacheDir, "clips").apply {
+        mkdirs()
+        val ayer = System.currentTimeMillis() - 86_400_000L
+        listFiles()?.forEach { if (it.lastModified() < ayer) it.delete() }
+    }
 
     /**
      * Dónde va el rótulo: el punto del clip (x, y) y el punto del rótulo (x, y) que se pone
