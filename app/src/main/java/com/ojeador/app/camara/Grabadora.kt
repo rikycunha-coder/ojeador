@@ -10,10 +10,12 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Range
 import android.view.Surface
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.DynamicRange
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
@@ -43,6 +45,31 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
 
+/** Cómo se graba: calidad (HD, FHD o UHD), imágenes por segundo y estabilización. */
+data class AjustesVideo(val calidad: String = "HD", val fps: Int = 30, val estabilizar: Boolean = true) {
+    /** Megabits por segundo del vídeo: más que lo que usa la cámara del móvil por defecto, para que el césped no se emborrone. */
+    val mbps: Int
+        get() = when (calidad) {
+            "UHD" -> if (fps >= 60) 50 else 35
+            "FHD" -> if (fps >= 60) 18 else 12
+            else -> if (fps >= 60) 9 else 6
+        }
+
+    /** Megas por minuto de grabación. */
+    val mbPorMinuto: Double get() = mbps * 60 / 8.0
+
+    /** Gigas de un partido de [minutos] minutos. */
+    fun gbPorPartido(minutos: Int = 70): Double = mbPorMinuto * minutos / 1024.0
+
+    companion object {
+        fun nombre(calidad: String): String = when (calidad) {
+            "UHD" -> "4K"
+            "FHD" -> "Full HD"
+            else -> "HD"
+        }
+    }
+}
+
 /**
  * La cámara trasera con vista previa y grabación de vídeo (CameraX). Guarda los vídeos en la
  * galería, en Películas/Ojeador. La vista previa y el vídeo tienen la misma proporción (16:9),
@@ -67,6 +94,14 @@ class Grabadora(private val ctx: Context) {
     var videoId: String? = null
         private set
 
+    /** Lo que admite la cámara trasera de este móvil (se sabe al abrirla). */
+    var admite4k by mutableStateOf(false)
+        private set
+    var admite60 by mutableStateOf(false)
+        private set
+    var admiteEstabilizar by mutableStateOf(false)
+        private set
+
     private var inicio = 0L
     private var proveedor: ProcessCameraProvider? = null
     private var camara: Camera? = null
@@ -75,7 +110,7 @@ class Grabadora(private val ctx: Context) {
     private var grabacion: Recording? = null
     private var vista: PreviewView? = null
     private var dueno: LifecycleOwner? = null
-    private var calidad = "HD"
+    private var ajustes = AjustesVideo()
 
     private val pantallas = ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     private val oyente = object : DisplayManager.DisplayListener {
@@ -92,10 +127,10 @@ class Grabadora(private val ctx: Context) {
         pantallas.registerDisplayListener(oyente, Handler(Looper.getMainLooper()))
     }
 
-    fun conectar(owner: LifecycleOwner, v: PreviewView, calidad: String) {
+    fun conectar(owner: LifecycleOwner, v: PreviewView, ajustes: AjustesVideo) {
         vista = v
         dueno = owner
-        this.calidad = calidad
+        this.ajustes = ajustes
         val futuro = ProcessCameraProvider.getInstance(ctx)
         futuro.addListener({
             val p = runCatching { futuro.get() }.getOrNull()
@@ -104,15 +139,26 @@ class Grabadora(private val ctx: Context) {
                 return@addListener
             }
             proveedor = p
+            leerCapacidades(p)
             enlazar()
         }, ContextCompat.getMainExecutor(ctx))
     }
 
-    /** Cambia la calidad (solo sin grabar). */
-    fun cambiarCalidad(c: String) {
-        if (grabando || c == calidad) return
-        calidad = c
+    /** Cambia cómo se graba (solo sin grabar: se vuelve a abrir la cámara con lo nuevo). */
+    fun cambiarAjustes(a: AjustesVideo) {
+        if (grabando || a == ajustes) return
+        ajustes = a
         enlazar()
+    }
+
+    private fun leerCapacidades(p: ProcessCameraProvider) {
+        runCatching {
+            val info = p.getCameraInfo(CameraSelector.DEFAULT_BACK_CAMERA)
+            val capacidades = Recorder.getVideoCapabilities(info)
+            admite4k = capacidades.isQualitySupported(Quality.UHD, DynamicRange.SDR)
+            admiteEstabilizar = capacidades.isStabilizationSupported
+            admite60 = info.supportedFrameRateRanges.any { it.upper >= 60 }
+        }
     }
 
     private fun enlazar() {
@@ -125,13 +171,23 @@ class Grabadora(private val ctx: Context) {
             .build()
         val pv = Preview.Builder().setResolutionSelector(selector).setTargetRotation(rot).build()
         pv.setSurfaceProvider(v.surfaceProvider)
-        val q = if (calidad == "FHD") Quality.FHD else Quality.HD
+        val a = ajustes
+        val q = when (a.calidad) {
+            "UHD" -> Quality.UHD
+            "FHD" -> Quality.FHD
+            else -> Quality.HD
+        }
         val rec = Recorder.Builder()
             .setQualitySelector(QualitySelector.from(q, FallbackStrategy.lowerQualityOrHigherThan(q)))
             .setAspectRatio(AspectRatio.RATIO_16_9)
-            .setTargetVideoEncodingBitRate(if (calidad == "FHD") 12_000_000 else 6_000_000)
+            .setTargetVideoEncodingBitRate(a.mbps * 1_000_000)
             .build()
-        val vc = VideoCapture.Builder(rec).setTargetRotation(rot).build()
+        val constructor = VideoCapture.Builder(rec).setTargetRotation(rot)
+        // A 60 imágenes por segundo y estabilizado, solo si la cámara lo admite: si no, la cámara
+        // ni se abriría. Aun así es un objetivo: el móvil puede quedarse en 30 con poca luz.
+        if (a.fps >= 60 && admite60) constructor.setTargetFrameRate(Range(60, 60))
+        if (a.estabilizar && admiteEstabilizar) constructor.setVideoStabilizationEnabled(true)
+        val vc = constructor.build()
         try {
             p.unbindAll()
             camara = p.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, pv, vc)
@@ -147,7 +203,13 @@ class Grabadora(private val ctx: Context) {
             error = null
             lista = true
         } catch (e: Exception) {
-            error = "No se pudo abrir la cámara: ${e.message}"
+            if (a != AjustesVideo(a.calidad, 30, false)) {
+                // Con 60 imágenes por segundo o estabilizado no abrió: se prueba lo más sencillo.
+                ajustes = AjustesVideo(a.calidad, 30, false)
+                enlazar()
+            } else {
+                error = "No se pudo abrir la cámara: ${e.message}"
+            }
         }
     }
 

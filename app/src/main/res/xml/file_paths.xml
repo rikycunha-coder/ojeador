@@ -2,4 +2,5 @@
 <paths>
     <cache-path name="informes" path="informes/" />
     <cache-path name="copias" path="copias/" />
+    <cache-path name="clips" path="clips/" />
 </paths>

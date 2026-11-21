@@ -10,6 +10,8 @@ import android.view.HapticFeedbackConstants
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,12 +25,15 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -54,10 +59,12 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ojeador.app.Almacen
 import com.ojeador.app.Navegador
@@ -73,6 +80,7 @@ import com.ojeador.app.data.mmss
 import com.ojeador.app.data.msEnVideo
 import com.ojeador.app.data.nuevoId
 import com.ojeador.app.data.tiempoEnVideo
+import com.ojeador.app.logic.Estadisticas
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
@@ -101,64 +109,57 @@ private fun infoVideo(ctx: Context, uri: Uri): Pair<String, Long> {
 @Composable
 fun TabVideo(almacen: Almacen, p: Partido, nav: Navegador) {
     val ctx = LocalContext.current
+    val mini = rememberMiniaturas()
+    val nombre = almacen.datos.perfil.nombre
     var quitar by remember { mutableStateOf<VideoRef?>(null) }
     val elegir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val (nombre, dur) = infoVideo(ctx, uri)
-            val v = VideoRef(nuevoId("v"), uri.toString(), nombre, grabadoConApp = false, parte = 1, inicioMs = null, duracionMs = dur)
+            val (nombreVideo, dur) = infoVideo(ctx, uri)
+            val v = VideoRef(nuevoId("v"), uri.toString(), nombreVideo, grabadoConApp = false, parte = 1, inicioMs = null, duracionMs = dur)
             almacen.cambiarPartido(p.id) { it.copy(videos = it.videos + v) }
             nav.ir(Pantalla.Revisar(p.id, v.id))
         }
     }
+    val jugadas = remember(p.eventos, p.videos) { p.jugadasConVideo() }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(12.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
+        item(key = "grabar") {
             Tarjeta(titulo = "Grabar y anotar") {
                 Text(
-                    "Graba con la cámara del móvil en horizontal. Mientras grabas, toca a ${almacen.datos.perfil.nombre} en la pantalla y luego la acción: " +
-                        "cada jugada queda guardada con su momento del vídeo y dónde estaba.",
+                    "Graba en horizontal. Mientras grabas, toca a $nombre en la imagen y elige la jugada: " +
+                        "queda guardada con su momento del vídeo y dónde estaba.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Boton("● Abrir la cámara", { nav.ir(Pantalla.Camara(p.id)) }, Modifier.fillMaxWidth())
+                Boton("Abrir la cámara", { nav.ir(Pantalla.Camara(p.id)) }, Modifier.fillMaxWidth(), icono = Iconos.Camara)
             }
         }
-        item {
+        item(key = "videos") {
             Tarjeta(titulo = "Vídeos de este partido") {
                 if (p.videos.isEmpty()) TextoSuave("Aún no hay vídeos. También puedes añadir uno grabado con otra cámara o por otro padre.")
                 p.videos.forEach { v ->
-                    val n = p.eventos.count { e -> p.msEnVideo(v, e) != null }
-                    Surface(
-                        onClick = { nav.ir(Pantalla.Revisar(p.id, v.id)) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("▶", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(v.nombre, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                val sync = if (v.grabadoConApp || v.inicioMs != null) "$n jugadas" else "sin sincronizar"
-                                TextoSuave("${mmss(v.duracionMs / 1000.0)} · $sync")
-                            }
-                            BotonIcono("✕", { quitar = v }, descripcion = "Quitar", color = MaterialTheme.colorScheme.onSurfaceVariant, tam = 16)
-                        }
-                    }
+                    FilaVideo(p, v, jugadas.firstOrNull { it.v.id == v.id }?.ms, mini, onAbrir = { nav.ir(Pantalla.Revisar(p.id, v.id)) }, onQuitar = { quitar = v })
                 }
-                Boton("Añadir vídeo de la galería", { elegir.launch(arrayOf("video/*")) }, Modifier.fillMaxWidth(), Tipo.BORDE)
+                Boton("Añadir un vídeo de la galería", { elegir.launch(arrayOf("video/*")) }, Modifier.fillMaxWidth(), Tipo.BORDE, icono = Iconos.Galeria)
             }
+        }
+        if (p.videos.isNotEmpty()) {
+            item(key = "clips") { TarjetaClips(jugadas, nombre, mini) { nav.ir(Pantalla.Clips(p.id)) } }
         }
         val momentos = p.eventos.filter { it.k == "momento" }
         if (momentos.isNotEmpty()) {
-            item {
-                Tarjeta(titulo = "Momentos marcados con ★") {
+            item(key = "momentos") {
+                Tarjeta(titulo = "Momentos para el vídeo") {
                     momentos.forEach { e ->
                         val v = p.videos.firstOrNull { p.msEnVideo(it, e) != null }
-                        FilaEvento(e, v?.let { vv -> { nav.ir(Pantalla.Revisar(p.id, vv.id, (p.msEnVideo(vv, e) ?: 0L) - 5000)) } })
+                        FilaEvento(
+                            e,
+                            v?.let { vv -> { nav.ir(Pantalla.Revisar(p.id, vv.id, (p.msEnVideo(vv, e) ?: 0L) - 5000)) } },
+                            icono = Iconos.Play,
+                        )
                     }
                 }
             }
@@ -175,6 +176,80 @@ fun TabVideo(almacen: Almacen, p: Partido, nav: Navegador) {
             },
             onNo = { quitar = null },
         )
+    }
+}
+
+/** Un vídeo del partido: su fotograma con la duración, cuántas jugadas tiene y para quitarlo. */
+@Composable
+private fun FilaVideo(p: Partido, v: VideoRef, msJugada: Long?, mini: Miniaturas, onAbrir: () -> Unit, onQuitar: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val ex = LocalExtra.current
+    val n = p.eventos.count { e -> p.msEnVideo(v, e) != null }
+    val sincronizado = v.grabadoConApp || v.inicioMs != null
+    Row(
+        Modifier.fillMaxWidth().pulsable(forma = RoundedCornerShape(16.dp), escala = 0.98f, onClick = onAbrir).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(width = 112.dp, height = 63.dp).clip(RoundedCornerShape(12.dp))) {
+            Miniatura(mini, v.uri, msJugada ?: min(2000L, v.duracionMs / 3), Modifier.fillMaxSize())
+            Box(
+                Modifier.align(Alignment.Center).size(30.dp).clip(CircleShape).background(Color(0x8C000000)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Iconos.Play, null, Modifier.size(18.dp), tint = Color.White) }
+            if (v.duracionMs > 0) {
+                Text(
+                    mmss(v.duracionMs / 1000.0),
+                    Modifier.align(Alignment.BottomEnd).padding(4.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xB3000000))
+                        .padding(horizontal = 5.dp),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall.merge(Cifras),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(v.nombre, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (sincronizado) {
+                TextoSuave(cuenta(n, "jugada") + if (v.grabadoConApp) ", grabado con la app" else ", de la galería")
+            } else {
+                Text("Sin sincronizar con el reloj", style = MaterialTheme.typography.bodySmall, color = ex.marca)
+            }
+        }
+        BotonIcono(Iconos.Cerrar, onQuitar, descripcion = "Quitar", color = cs.onSurfaceVariant, tam = 20.dp)
+    }
+}
+
+/** La entrada a los clips para redes, con un abanico de las jugadas que irían en vertical. */
+@Composable
+private fun TarjetaClips(jugadas: List<JugadaVideo>, nombre: String, mini: Miniaturas, onAbrir: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Tarjeta(titulo = "Clips para redes") {
+        if (jugadas.isEmpty()) {
+            TextoSuave("Cuando haya jugadas anotadas en un vídeo, aquí podrás cortarlas en clips para Instagram, TikTok o WhatsApp.")
+            return@Tarjeta
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val muestra = (jugadas.filter { Estadisticas.esBuena(it.e) }.ifEmpty { jugadas }).take(3)
+            Box(Modifier.size(width = 52.dp + 30.dp * (muestra.size - 1), height = 92.dp)) {
+                muestra.forEachIndexed { i, j ->
+                    Box(
+                        Modifier
+                            .padding(start = 30.dp * i)
+                            .size(width = 52.dp, height = 92.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(cs.surfaceContainer)
+                            .padding(2.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                    ) { Miniatura(mini, j.uri, j.ms, Modifier.fillMaxSize(), lado = 240) }
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(cuenta(jugadas.size, "jugada") + " con vídeo", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                TextoSuave("En vertical u horizontal, con el aro sobre $nombre y el rótulo de cada jugada.")
+            }
+        }
+        Boton("Preparar clips", onAbrir, Modifier.fillMaxWidth(), icono = Iconos.Tijeras)
     }
 }
 
@@ -302,7 +377,10 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
             v.nombre,
             "${p.rival} · ${if (v.grabadoConApp) "grabado con la app" else "de la galería"}",
             onAtras = { nav.atras() },
-            acciones = { Boton("Sincronizar", { sincronizar = true }, tipo = Tipo.TEXTO) },
+            acciones = {
+                BotonIcono(Iconos.Tijeras, { nav.ir(Pantalla.Clips(p.id)) }, descripcion = "Clips para redes")
+                BotonIcono(Iconos.Sincronizar, { sincronizar = true }, descripcion = "Sincronizar con el reloj")
+            },
         )
     }
     val video: @Composable () -> Unit = {
@@ -369,13 +447,25 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                 }
                 val actual = jugadas.lastOrNull { (_, ms) -> pos in (ms - 1200)..(ms + 2500) }?.first
                 if (actual != null) {
-                    Text(
-                        "${minutoDe(actual.t)}'  ${Catalogo.etiqueta(actual)}",
-                        Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xCC000000)).padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                    // El mismo rótulo que llevan los clips: el minuto en amarillo y la jugada.
+                    Row(
+                        Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(10.dp)).background(Colores.Tinta.copy(alpha = 0.9f)),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${minutoDe(actual.t)}'",
+                            Modifier.background(Colores.Amarillo).padding(horizontal = 8.dp, vertical = 3.dp),
+                            color = Colores.SobreAmarillo,
+                            style = Marcador.cifraPequena.copy(fontSize = 17.sp, lineHeight = 22.sp),
+                        )
+                        Text(
+                            textoEvento(actual),
+                            Modifier.padding(horizontal = 9.dp),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
             error?.let {
@@ -395,7 +485,14 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                 valueRange = 0f..max(1f, dur.toFloat()),
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                BotonIcono(if (reproduciendo) "❚❚" else "▶", { alternar() }, descripcion = if (reproduciendo) "Pausa" else "Reproducir")
+                BotonIcono(
+                    if (reproduciendo) Iconos.Pausa else Iconos.Play,
+                    { alternar() },
+                    descripcion = if (reproduciendo) "Pausa" else "Reproducir",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fondo = MaterialTheme.colorScheme.primary,
+                    tam = 26.dp,
+                )
                 Boton("−10", { irA(pos - 10_000, reproduciendo) }, tipo = Tipo.TEXTO)
                 Boton("−3", { irA(pos - 3_000, reproduciendo) }, tipo = Tipo.TEXTO)
                 Boton("+3", { irA(pos + 3_000, reproduciendo) }, tipo = Tipo.TEXTO)
@@ -410,12 +507,19 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                     },
                 )
             }
-            Text(
-                "${mmss(pos / 1000.0)} / ${mmss(dur / 1000.0)} · partido ${minutoDe(tAhora)}' (${hAhora}ª parte)",
-                Modifier.padding(bottom = 4.dp),
-                style = MaterialTheme.typography.bodySmall.merge(Cifras),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp)) {
+                Text(
+                    "${mmss(pos / 1000.0)} / ${mmss(dur / 1000.0)}",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium.merge(Cifras),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "Minuto ${minutoDe(tAhora)} de la ${hAhora}ª parte",
+                    style = MaterialTheme.typography.labelMedium.merge(Cifras),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
     val lista: @Composable () -> Unit = {
@@ -428,13 +532,13 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
             ) {
                 if (sinSincronizar) {
                     item {
-                        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.tertiaryContainer) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
                                     "Para ver en este vídeo las jugadas anotadas en directo, dile a la app en qué momento del vídeo empieza la parte.",
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                                 )
-                                Boton("Sincronizar con el reloj", { sincronizar = true })
+                                Boton("Sincronizar con el reloj", { sincronizar = true }, icono = Iconos.Sincronizar)
                             }
                         }
                     }
@@ -446,17 +550,25 @@ fun PantallaRevisar(almacen: Almacen, id: String, videoId: String, desde: Long, 
                         RejillaAcciones(conteo(p.eventos.filter { it.video == v.id }), columnas = 3, alto = 64.dp) { k, ok -> anotar(k, ok) }
                     }
                 }
-                item { Etiqueta("Jugadas en este vídeo (${jugadas.size}) · toca para verla") }
+                item {
+                    TituloSeccion("Jugadas en este vídeo") {
+                        Text("${jugadas.size}", style = Marcador.cifraPequena, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 if (jugadas.isEmpty()) item { TextoSuave("Ninguna todavía.") }
                 items(jugadas, key = { it.first.id }) { (e, ms) ->
                     val cerca = pos in (ms - 1200)..(ms + 2500)
-                    Box(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                            .background(if (cerca) MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
-                    ) {
+                    val fondo by animateColorAsState(
+                        if (cerca) Colores.Amarillo.copy(alpha = 0.22f) else Color.Transparent,
+                        tween(200),
+                        label = "jugadaCerca",
+                    )
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(fondo)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) { FilaEvento(e, { irA(ms - 3000, seguirReproduciendo = true) }, extra = "en el vídeo ${mmss(ms / 1000.0)}") }
-                            BotonIcono("✎", { editar = e }, descripcion = "Corregir", tam = 16)
+                            Box(Modifier.weight(1f)) {
+                                FilaEvento(e, { irA(ms - 3000, seguirReproduciendo = true) }, extra = "en el vídeo ${mmss(ms / 1000.0)}", icono = Iconos.Play)
+                            }
+                            BotonIcono(Iconos.Editar, { editar = e }, descripcion = "Corregir", color = MaterialTheme.colorScheme.onSurfaceVariant, tam = 20.dp)
                         }
                     }
                 }
@@ -524,7 +636,8 @@ private fun DialogoSincronizar(p: Partido, v: VideoRef, posMs: Long, onListo: (I
     var segundos by remember { mutableStateOf("0") }
     AlertDialog(
         onDismissRequest = onCerrar,
-        title = { Text("Sincronizar el vídeo") },
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        title = { Text("Sincronizar el vídeo", style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("En este momento del vídeo (${mmss(posMs / 1000.0)}), ¿qué marca el reloj del partido?")
@@ -544,7 +657,7 @@ private fun DialogoSincronizar(p: Partido, v: VideoRef, posMs: Long, onListo: (I
             TextButton(onClick = {
                 val seg = (minutos.toIntOrNull() ?: 0) * 60 + (segundos.toIntOrNull() ?: 0) - p.inicioParte(parte)
                 onListo(parte, posMs - seg.coerceAtLeast(0) * 1000L)
-            }) { Text("Sincronizar") }
+            }) { Text("Sincronizar", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onCerrar) { Text("Cancelar") } },
     )

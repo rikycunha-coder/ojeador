@@ -5,13 +5,13 @@ import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.Typeface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import com.ojeador.app.util.Letras
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -35,17 +35,18 @@ data class PaletaGrafico(
     val marca: Int,
 ) {
     companion object {
+        /** En papel, los mismos colores que la app en modo claro. */
         val Papel = PaletaGrafico(
-            tinta = 0xFF141A16.toInt(),
-            suave = 0xFF5B6B62.toInt(),
-            rejilla = 0xFFD5DDD7.toInt(),
-            principal = 0xFF0D6B43.toInt(),
-            relleno = 0x400D6B43,
-            bien = 0xFF1E8E4E.toInt(),
-            mal = 0xFFC8372D.toInt(),
-            campo = 0xFF2E7D4F.toInt(),
+            tinta = 0xFF13233B.toInt(),
+            suave = 0xFF5A6676.toInt(),
+            rejilla = 0xFFD5DBD7.toInt(),
+            principal = 0xFF13233B.toInt(),
+            relleno = 0x3313233B,
+            bien = 0xFF1E9E5A.toInt(),
+            mal = 0xFFE0412F.toInt(),
+            campo = 0xFF178452.toInt(),
             lineas = 0xDDFFFFFF.toInt(),
-            marca = 0xFFF2C230.toInt(),
+            marca = 0xFFFFD02E.toInt(),
         )
     }
 }
@@ -85,7 +86,7 @@ object Graficos {
             this.color = color
             textSize = tam
             textAlign = alin
-            typeface = if (negrita) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            typeface = if (negrita) Letras.negrita else Letras.normal
         }
 
     private fun trazo(color: Int, ancho: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply {

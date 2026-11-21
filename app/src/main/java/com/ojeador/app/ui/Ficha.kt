@@ -1,5 +1,8 @@
 package com.ojeador.app.ui
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.sp
 import android.graphics.RectF
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,24 +59,24 @@ fun PantallaFicha(almacen: Almacen, nav: Navegador) {
     var borrarMedida by remember { mutableStateOf<Medida?>(null) }
     val reales = d.reales
     Column(Modifier.fillMaxSize()) {
-        BarraSuperior("Ficha de ${perfil.nombre}", lineaPerfil(perfil), onAtras = { nav.atras() })
+        BarraSuperior("Ficha de ${perfil.nombre}", fraseRafa(perfil), onAtras = { nav.atras() })
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (reales.isNotEmpty()) item { TarjetaTemporada(almacen) }
             item {
                 Tarjeta(titulo = "Crecimiento y maduración") { BloqueMaduracion(almacen) }
             }
             item {
-                Tarjeta(titulo = "Medidas", accion = { Boton("+ Añadir", { nuevaMedida = true }, tipo = Tipo.TEXTO) }) {
+                Tarjeta(titulo = "Medidas", accion = { Boton("Añadir", { nuevaMedida = true }, tipo = Tipo.TEXTO, icono = Iconos.Anadir) }) {
                     val medidas = perfil.medidas.sortedByDescending { it.fecha }
                     if (medidas.isEmpty()) TextoSuave("Mídelo cada 2 o 3 meses, siempre a la misma hora (mejor por la mañana).")
                     medidas.forEach { m ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(fechaCorta(m.fecha), style = MaterialTheme.typography.titleSmall)
+                                Text(fechaMedia(m.fecha), style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
                                 TextoSuave(
                                     listOfNotNull(
                                         m.altura?.let { "${formatoCorto(it)} cm" },
@@ -82,10 +85,10 @@ fun PantallaFicha(almacen: Almacen, nav: Navegador) {
                                         m.sprint20?.let { "20 m en ${dec(it, 2)} s" },
                                         m.salto?.let { "salto ${formatoCorto(it)} cm" },
                                         m.nota.takeIf { it.isNotBlank() },
-                                    ).joinToString(" · "),
+                                    ).joinToString(", "),
                                 )
                             }
-                            BotonIcono("✕", { borrarMedida = m }, descripcion = "Borrar medida", tam = 16, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            BotonIcono(Iconos.Cerrar, { borrarMedida = m }, descripcion = "Borrar medida", tam = 20.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -113,30 +116,29 @@ fun PantallaFicha(almacen: Almacen, nav: Navegador) {
                 }
             }
             item {
-                Tarjeta(titulo = "Ajustes") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Campo en el directo", style = MaterialTheme.typography.bodyLarge)
-                            TextoSuave("Para marcar dónde fue cada jugada y ver su mapa.")
-                        }
-                        Switch(perfil.pedirZona, { v -> almacen.cambiarPerfil { it.copy(pedirZona = v) } })
-                    }
-                    Grupo("Calidad de grabación") {
-                        Segmentos(listOf("HD" to "HD · 3 GB/partido", "FHD" to "Full HD · 6 GB"), perfil.calidadVideo, { v ->
-                            almacen.cambiarPerfil { it.copy(calidadVideo = v) }
-                        })
-                    }
+                Tarjeta(titulo = "Directo") {
+                    Interruptor(
+                        "Campo en el directo",
+                        "Para marcar dónde fue cada jugada y ver su mapa.",
+                        perfil.pedirZona,
+                        { v -> almacen.cambiarPerfil { it.copy(pedirZona = v) } },
+                    )
+                }
+            }
+            item {
+                Tarjeta(titulo = "Cámara") {
+                    AjustesGrabacion(perfil, { f -> almacen.cambiarPerfil(f) })
                 }
             }
             if (reales.isNotEmpty()) {
                 item {
-                    Boton("Informe de temporada (PDF)", {
+                    Boton("Informe de temporada en PDF", {
                         alcance.launch {
                             val f = withContext(Dispatchers.IO) { runCatching { InformePdf.temporada(ctx, almacen.datos) }.getOrNull() }
                             if (f == null) ctx.aviso("No se pudo crear el informe")
                             else Compartir.archivo(ctx, f, "application/pdf", "Enviar informe de temporada", texto = "Informe de temporada de ${perfil.nombre}")
                         }
-                    }, Modifier.fillMaxWidth().height(52.dp))
+                    }, Modifier.fillMaxWidth().height(56.dp), icono = Iconos.Pdf)
                 }
             }
         }
@@ -169,7 +171,7 @@ private fun BloqueMaduracion(almacen: Almacen) {
                     DatoKpi("${dec(estado.edadPhv)} años", "edad estimada del estirón · ${estado.ritmo.lowercase(ES)}"),
                 ),
                 2,
-            ) { k -> Kpi(k.valor, k.etiqueta) }
+            ) { k -> Kpi(k.valor, k.etiqueta, estilo = Marcador.cifraPequena, lineas = 2) }
             TextoSuave(
                 "La media de los chicos da el estirón hacia los ${dec(Maduracion.EDAD_PHV_MEDIA)} años. Los que maduran más tarde " +
                     "son más bajos y menos fuertes a esta edad, pero no peores: muchas canteras ya ajustan por esto (bio-banding). " +
@@ -204,7 +206,7 @@ private fun TarjetaTemporada(almacen: Almacen) {
     val pal = paletaPantalla()
     val ex = LocalExtra.current
     val valorados = partidos.filter { it.valoraciones.isNotEmpty() }
-    Tarjeta(titulo = "Temporada · ${cuenta(partidos.size, "partido")}") {
+    Tarjeta(titulo = "Temporada", accion = { Text(cuenta(partidos.size, "partido"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }) {
         if (valorados.isNotEmpty()) {
             val medias = Area.entries.map { Valoracion.mediaAreaPartidos(valorados, it) }
             Grafico(Modifier.fillMaxWidth().height(220.dp)) { c, w, h, u ->
@@ -213,10 +215,10 @@ private fun TarjetaTemporada(almacen: Almacen) {
             val ranking = Valoracion.ranking(valorados)
             if (ranking.size >= 4) {
                 Grupo("Lo mejor valorado") {
-                    ranking.take(3).forEach { (a, v) -> Text("${dec(v)}  ${a.nombre}", style = MaterialTheme.typography.bodyMedium) }
+                    ranking.take(3).forEach { (a, v) -> FilaRanking(dec(v), a.nombre) }
                 }
                 Grupo("A mejorar") {
-                    ranking.takeLast(3).reversed().forEach { (a, v) -> Text("${dec(v)}  ${a.nombre}", style = MaterialTheme.typography.bodyMedium) }
+                    ranking.takeLast(3).reversed().forEach { (a, v) -> FilaRanking(dec(v), a.nombre) }
                 }
             }
         }
@@ -259,7 +261,8 @@ private fun DialogoMedida(onGuardar: (Medida) -> Unit, onCerrar: () -> Unit) {
     var nota by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onCerrar,
-        title = { Text("Nueva medida") },
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        title = { Text("Nueva medida", style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -282,4 +285,12 @@ private fun DialogoMedida(onGuardar: (Medida) -> Unit, onCerrar: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onCerrar) { Text("Cancelar") } },
     )
+}
+
+@Composable
+private fun FilaRanking(valor: String, nombre: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(valor, Modifier.width(44.dp), style = Marcador.cifraPequena.copy(fontSize = 20.sp), color = MaterialTheme.colorScheme.onSurface)
+        Text(nombre, style = MaterialTheme.typography.bodyMedium)
+    }
 }

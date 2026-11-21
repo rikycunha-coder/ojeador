@@ -37,6 +37,7 @@ import com.ojeador.app.ui.hoy
 import com.ojeador.app.ui.kpisPartido
 import com.ojeador.app.ui.pct
 import com.ojeador.app.ui.piernaMenosHabil
+import com.ojeador.app.util.Letras
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
@@ -44,12 +45,13 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-private const val VERDE = 0xFF0D6B43.toInt()
-private const val AMARILLO = 0xFFF2C230.toInt()
-private const val TINTA = 0xFF141A16.toInt()
-private const val GRIS = 0xFF5B6B62.toInt()
-private const val REJILLA = 0xFFD5DDD7.toInt()
-private const val FONDO = 0xFFEEF3EF.toInt()
+// Los colores de la app: la tinta azul de la pizarra, el amarillo de marcar y un gris frío.
+private const val PIZARRA = 0xFF13233B.toInt()
+private const val AMARILLO = 0xFFFFD02E.toInt()
+private const val TINTA = 0xFF13233B.toInt()
+private const val GRIS = 0xFF5A6676.toInt()
+private const val REJILLA = 0xFFD5DBD7.toInt()
+private const val FONDO = 0xFFEFF2F5.toInt()
 private const val BLANCO = 0xFFFFFFFF.toInt()
 
 private fun pintura(color: Int, tam: Float, negrita: Boolean = false, alin: Paint.Align = Paint.Align.LEFT) =
@@ -57,7 +59,7 @@ private fun pintura(color: Int, tam: Float, negrita: Boolean = false, alin: Pain
         this.color = color
         textSize = tam
         textAlign = alin
-        typeface = if (negrita) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        typeface = if (negrita) Letras.negrita else Letras.normal
     }
 
 private fun relleno(color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.FILL }
@@ -127,15 +129,17 @@ private class Hoja(private val doc: PdfDocument, private val pie: String) {
     fun seccion(t: String) {
         cabe(48f)
         y += 12f
-        c.drawText(t.uppercase(ES), margen, y + 8f, pintura(VERDE, 8.5f, negrita = true).apply { letterSpacing = 0.12f })
+        c.drawText(t, margen, y + 9f, pintura(PIZARRA, 11f, negrita = true))
         c.drawLine(margen, y + 13f, margen + util, y + 13f, Paint().apply { color = REJILLA; strokeWidth = 0.8f })
         y += 22f
     }
 
     fun cabecera(etiqueta: String, titulo: String, sub: String, derecha: String) {
         nueva()
-        c.drawRect(0f, 0f, ancho, 92f, relleno(VERDE))
-        c.drawText(etiqueta, margen, 30f, pintura(AMARILLO, 8.5f, negrita = true).apply { letterSpacing = 0.15f })
+        c.drawRect(0f, 0f, ancho, 92f, relleno(PIZARRA))
+        // Una franja amarilla abajo, como la del marcador de la app.
+        c.drawRect(0f, 89f, ancho, 92f, relleno(AMARILLO))
+        c.drawText(etiqueta, margen, 30f, pintura(AMARILLO, 9.5f, negrita = true))
         c.drawText(titulo, margen, 56f, pintura(BLANCO, 20f, negrita = true))
         c.drawText(sub, margen, 75f, pintura(0xCCFFFFFF.toInt(), 9.5f))
         c.drawText(derecha, ancho - margen, 30f, pintura(BLANCO, 9.5f, alin = Paint.Align.RIGHT))
@@ -152,13 +156,14 @@ private class Hoja(private val doc: PdfDocument, private val pie: String) {
             fila.forEachIndexed { i, k ->
                 val x = margen + i * (w + hueco)
                 c.drawRoundRect(RectF(x, y, x + w, y + h), 6f, 6f, relleno(FONDO))
-                var tam = 14f
-                val cifra = pintura(TINTA, tam, negrita = true)
+                // La cifra con la letra estrecha del marcador: cabe más y se lee de un vistazo.
+                var tam = 17f
+                val cifra = pintura(TINTA, tam, negrita = true).apply { typeface = Letras.cifras }
                 while (cifra.measureText(k.valor) > w - 14f && tam > 8f) {
                     tam -= 0.5f
                     cifra.textSize = tam
                 }
-                c.drawText(k.valor, x + 7f, y + 19f, cifra)
+                c.drawText(k.valor, x + 7f, y + 20f, cifra)
                 val l = parrafo(k.etiqueta + (k.detalle?.let { " · $it" } ?: ""), 7.5f, GRIS, false, w - 14f, 1.05f)
                 c.save()
                 c.translate(x + 7f, y + 24f)
@@ -243,7 +248,7 @@ object InformePdf {
 
     private fun dibujarPartido(h: Hoja, perfil: Perfil, p: Partido) {
         val r = Estadisticas.resumen(p, perfil.pie)
-        h.cabecera("INFORME DE OJEADOR", "${perfil.nombre} · ${p.posicion}", "${perfil.club} · ${perfil.categoria}", fechaCorta(p.fecha))
+        h.cabecera("Informe de ojeador", "${perfil.nombre} · ${p.posicion}", "${perfil.club} · ${perfil.categoria}", fechaCorta(p.fecha))
         h.texto("${p.titulo()}   ${p.marcador()}", 16f, negrita = true, despues = 2f)
         h.texto(
             listOf(
@@ -400,7 +405,7 @@ object InformePdf {
             var yy = h.y
             areas.forEach { a ->
                 val idx = Area.entries.indexOf(a)
-                h.c.drawText("${a.titulo}${medias[idx]?.let { " · " + dec(it) } ?: ""}", x, yy + 10f, pintura(VERDE, 9.5f, negrita = true))
+                h.c.drawText("${a.titulo}${medias[idx]?.let { " · " + dec(it) } ?: ""}", x, yy + 10f, pintura(PIZARRA, 9.5f, negrita = true))
                 yy += 16f
                 val filas = Valoracion.atributos.filter { it.area == a }.map { it.nombre to valor(it.k) }
                 yy += Graficos.barras(h.c, x, yy, col, filas, pal, 1f, alto = fila, fraccionEtiqueta = 0.6f)
@@ -413,7 +418,7 @@ object InformePdf {
         val perfil = d.perfil
         val partidos = Temporada.cronologico(d.reales)
         val t = Temporada.resumen(partidos, perfil.pie)
-        h.cabecera("INFORME DE TEMPORADA", perfil.nombre, "${perfil.club} · ${perfil.categoria}", fechaCorta(hoy()))
+        h.cabecera("Informe de temporada", perfil.nombre, "${perfil.club} · ${perfil.categoria}", fechaCorta(hoy()))
 
         h.seccion("Ficha")
         val ficha = fichaJugador(perfil)
@@ -453,18 +458,18 @@ object InformePdf {
             h.c.drawText("Nota (1 a 10)", h.margen, h.y + 8f, pintura(GRIS, 8.5f, negrita = true))
             Graficos.lineas(
                 h.c, RectF(h.margen, h.y + 12f, h.margen + w, h.y + 140f),
-                listOf(partidos.map { it.nota?.toDouble() } to VERDE), etiquetas, 0.0, 10.0, pal, 1f,
+                listOf(partidos.map { it.nota?.toDouble() } to PIZARRA), etiquetas, 0.0, 10.0, pal, 1f,
             )
             val rs = partidos.map { Estadisticas.resumen(it, perfil.pie) }
             val x2 = h.margen + w + 20f
             h.c.drawText("Decisiones buenas y pases buenos (%)", x2, h.y + 8f, pintura(GRIS, 8.5f, negrita = true))
             Graficos.lineas(
                 h.c, RectF(x2, h.y + 12f, x2 + w, h.y + 140f),
-                listOf(rs.map { it.decision.pct?.toDouble() } to VERDE, rs.map { it.pase.pct?.toDouble() } to AMARILLO),
+                listOf(rs.map { it.decision.pct?.toDouble() } to PIZARRA, rs.map { it.pase.pct?.toDouble() } to AMARILLO),
                 etiquetas, 0.0, 100.0, pal, 1f,
             )
             h.y += 146f
-            h.c.drawCircle(x2 + 4f, h.y - 2f, 3.5f, relleno(VERDE))
+            h.c.drawCircle(x2 + 4f, h.y - 2f, 3.5f, relleno(PIZARRA))
             h.c.drawText("decisiones", x2 + 11f, h.y + 1f, pintura(TINTA, 8f))
             h.c.drawCircle(x2 + 74f, h.y - 2f, 3.5f, relleno(AMARILLO))
             h.c.drawText("pases", x2 + 81f, h.y + 1f, pintura(TINTA, 8f))

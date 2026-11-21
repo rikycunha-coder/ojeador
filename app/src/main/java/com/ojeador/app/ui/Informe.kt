@@ -1,5 +1,9 @@
 package com.ojeador.app.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.sp
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -74,18 +78,22 @@ fun TabInforme(almacen: Almacen, p: Partido, perfil: Perfil) {
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
             Tarjeta(titulo = "Informe en PDF") {
                 TextoSuave("Con el contexto, los datos, la valoración por áreas, el mapa y lo que escribas abajo.")
+                Boton(
+                    if (generando) "Creando el informe…" else "Compartir el informe",
+                    { conPdf { f -> Compartir.archivo(ctx, f, "application/pdf", "Enviar informe", texto = "Informe de ${perfil.nombre}: ${p.titulo()}") } },
+                    Modifier.fillMaxWidth(),
+                    enabled = !generando,
+                    icono = Iconos.Compartir,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Boton(if (generando) "Creando…" else "Compartir", {
-                        conPdf { f -> Compartir.archivo(ctx, f, "application/pdf", "Enviar informe", texto = "Informe de ${perfil.nombre}: ${p.titulo()}") }
-                    }, Modifier.weight(1f), enabled = !generando)
-                    Boton("Guardar", { guardar.launch(InformePdf.nombreArchivo(perfil, p)) }, Modifier.weight(1f), Tipo.BORDE, enabled = !generando)
-                    Boton("Ver", { conPdf { f -> Compartir.abrir(ctx, f, "application/pdf") } }, Modifier.weight(1f), Tipo.BORDE, enabled = !generando)
+                    Boton("Guardar", { guardar.launch(InformePdf.nombreArchivo(perfil, p)) }, Modifier.weight(1f), Tipo.BORDE, enabled = !generando, icono = Iconos.Descargar)
+                    Boton("Ver", { conPdf { f -> Compartir.abrir(ctx, f, "application/pdf") } }, Modifier.weight(1f), Tipo.BORDE, enabled = !generando, icono = Iconos.Pdf)
                 }
             }
         }
@@ -137,23 +145,25 @@ fun TabInforme(almacen: Almacen, p: Partido, perfil: Perfil) {
     }
 }
 
+/** Una casilla de nota. La elegida va en tinta; la que sugieren los datos lleva el borde amarillo de lo marcado. */
 @Composable
 fun CasillaNumero(texto: String, seleccionada: Boolean, sugerida: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val forma = RoundedCornerShape(12.dp)
+    val fondo by animateColorAsState(if (seleccionada) cs.primary else cs.surfaceContainerHigh, tween(180), label = "casilla")
     Box(
         Modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (seleccionada) cs.primary else cs.surfaceContainerHighest)
-            .let { if (sugerida && !seleccionada) it.border(2.dp, Colores.Amarillo, RoundedCornerShape(10.dp)) else it }
-            .clickable(onClick = onClick),
+            .height(46.dp)
+            .pulsable(forma = forma, onClick = onClick)
+            .background(fondo)
+            .let { if (sugerida && !seleccionada) it.border(2.dp, Colores.Amarillo, forma) else it },
         contentAlignment = Alignment.Center,
     ) {
         Text(
             texto,
             color = if (seleccionada) cs.onPrimary else cs.onSurface,
-            fontWeight = FontWeight.SemiBold,
+            style = Marcador.cifraPequena.copy(fontSize = 20.sp),
             textAlign = TextAlign.Center,
         )
     }
@@ -162,15 +172,15 @@ fun CasillaNumero(texto: String, seleccionada: Boolean, sugerida: Boolean, onCli
 @Composable
 private fun TarjetaArea(area: Area, p: Partido, r: Resumen, onValor: (String, Int?) -> Unit) {
     val media = Valoracion.mediaArea(p.valoraciones, area)
-    Tarjeta(titulo = area.titulo + (media?.let { " · ${dec(it)}" } ?: "")) {
+    Tarjeta(titulo = area.titulo, accion = media?.let { m -> { Text(dec(m), style = Marcador.cifraPequena, color = MaterialTheme.colorScheme.onSurface) } }) {
         Valoracion.atributos.filter { it.area == area }.forEach { a ->
             val v = p.valoraciones[a.k]
             val sug = Valoracion.sugerencia(a.k, r)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(a.nombre, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Text(a.nombre, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
                     Text(
-                        v?.let { Valoracion.escala[it] } ?: sug?.let { "datos: $it" } ?: "",
+                        v?.let { Valoracion.escala[it] } ?: sug?.let { "Los datos dicen $it" } ?: "",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (v != null) MaterialTheme.colorScheme.primary else LocalExtra.current.suave,
                     )

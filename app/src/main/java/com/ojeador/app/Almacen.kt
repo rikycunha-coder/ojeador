@@ -10,6 +10,7 @@ import com.ojeador.app.data.Ejemplo
 import com.ojeador.app.data.Json
 import com.ojeador.app.data.Partido
 import com.ojeador.app.data.Perfil
+import com.ojeador.app.util.Letras
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -21,6 +22,7 @@ class OjeadorApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Letras.cargar(this)
         almacen = Almacen(this)
     }
 }

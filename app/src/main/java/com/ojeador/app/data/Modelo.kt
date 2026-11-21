@@ -178,8 +178,14 @@ data class Perfil(
     val medidas: List<Medida> = listOf(Medida("m-inicial", "2026-10-13", altura = 150.0)),
     /** Enseñar el campo en el directo para marcar dónde fue cada jugada. */
     val pedirZona: Boolean = true,
-    /** Calidad de grabación: HD (720p, ocupa la mitad) o FHD (1080p). */
+    /** Calidad de grabación: HD (720p, ocupa menos), FHD (1080p) o UHD (4K, si el móvil la tiene). */
     val calidadVideo: String = "HD",
+    /** Imágenes por segundo al grabar: 30 o 60 (más suave al pasar una jugada a cámara lenta). */
+    val fps: Int = 30,
+    /** Estabilizar el vídeo (quita el temblor de la mano), si el móvil puede. */
+    val estabilizar: Boolean = true,
+    /** Grabar también el sonido. */
+    val sonido: Boolean = true,
 )
 
 data class Datos(

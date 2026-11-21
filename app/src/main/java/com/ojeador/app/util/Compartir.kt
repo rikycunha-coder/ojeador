@@ -1,6 +1,7 @@
 package com.ojeador.app.util
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -40,6 +41,34 @@ object Compartir {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         lanzar(ctx, intent, titulo)
+    }
+
+    /** Uno o varios vídeos ya guardados (direcciones de la galería o de la app), con WhatsApp el primero. */
+    fun videos(ctx: Context, uris: List<Uri>, titulo: String) {
+        if (uris.isEmpty()) return
+        val intent = if (uris.size == 1) {
+            Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+        }
+        intent.type = "video/mp4"
+        // El permiso de lectura llega a todos los vídeos, no solo al primero.
+        intent.clipData = ClipData.newRawUri(null, uris[0]).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        lanzar(ctx, intent, titulo)
+    }
+
+    /** Abre un vídeo (o lo que sea [mime]) en la app que elija el móvil. */
+    fun ver(ctx: Context, uri: Uri, mime: String) {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            ctx.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(ctx, "No hay ninguna app para ver vídeos en el móvil", Toast.LENGTH_LONG).show()
+        }
     }
 
     fun abrir(ctx: Context, f: File, mime: String) {

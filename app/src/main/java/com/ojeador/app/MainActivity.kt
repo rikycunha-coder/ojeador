@@ -8,6 +8,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -26,7 +34,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.ojeador.app.ui.Movimiento
 import com.ojeador.app.ui.PantallaCamara
+import com.ojeador.app.ui.PantallaClips
 import com.ojeador.app.ui.PantallaFicha
 import com.ojeador.app.ui.PantallaInicio
 import com.ojeador.app.ui.PantallaNuevoPartido
@@ -44,6 +54,8 @@ sealed interface Pantalla {
     data class Camara(val id: String) : Pantalla
     /** [desde]: milisegundo del vídeo en que empezar (−1 = donde estaba). */
     data class Revisar(val id: String, val video: String, val desde: Long = -1) : Pantalla
+    /** Cortar las jugadas marcadas en clips para redes. */
+    data class Clips(val id: String) : Pantalla
 }
 
 class MainActivity : ComponentActivity() {
@@ -64,11 +76,54 @@ class MainActivity : ComponentActivity() {
 
 /** Navegación: lo que la pantalla abre, va encima; «atrás» vuelve a la anterior. */
 class Navegador(inicial: Pantalla) {
+    enum class Paso { IR, ATRAS, CAMBIAR }
+
     val pila = mutableStateListOf(inicial)
     val actual: Pantalla get() = pila.last()
-    fun ir(p: Pantalla) { pila.add(p) }
-    fun cambiar(p: Pantalla) { pila[pila.lastIndex] = p }
-    fun atras() { if (pila.size > 1) pila.removeAt(pila.lastIndex) }
+
+    /** El último cambio de pantalla, para animarlo hacia el lado que toca. */
+    var ultimo = Paso.IR
+        private set
+
+    fun ir(p: Pantalla) {
+        ultimo = Paso.IR
+        pila.add(p)
+    }
+
+    fun cambiar(p: Pantalla) {
+        ultimo = Paso.CAMBIAR
+        pila[pila.lastIndex] = p
+    }
+
+    fun atras() {
+        if (pila.size > 1) {
+            ultimo = Paso.ATRAS
+            pila.removeAt(pila.lastIndex)
+        }
+    }
+}
+
+/** Qué pantalla es, sin lo que cambia dentro de ella (la pestaña de un partido no es otra pantalla). */
+private fun clave(p: Pantalla): Any = when (p) {
+    is Pantalla.DePartido -> "partido:" + p.id
+    else -> p
+}
+
+/**
+ * La pantalla nueva entra deslizándose desde la derecha y la anterior se aparta un poco hacia la
+ * izquierda; al volver, al revés. La cámara y el vídeo a pantalla completa aparecen con un fundido.
+ */
+private fun transicion(desde: Pantalla, hacia: Pantalla, paso: Navegador.Paso): ContentTransform {
+    val completa = desde is Pantalla.Camara || hacia is Pantalla.Camara || desde is Pantalla.Revisar || hacia is Pantalla.Revisar
+    if (completa || paso == Navegador.Paso.CAMBIAR) {
+        return fadeIn(tween(220, delayMillis = 60)) togetherWith fadeOut(tween(160))
+    }
+    val adelante = paso == Navegador.Paso.IR
+    val entra = slideInHorizontally(tween(340, easing = Movimiento.entra)) { w -> if (adelante) w / 4 else -w / 4 } +
+        fadeIn(tween(240, delayMillis = 40))
+    val sale = slideOutHorizontally(tween(260, easing = Movimiento.estandar)) { w -> if (adelante) -w / 10 else w / 10 } +
+        fadeOut(tween(160))
+    return entra togetherWith sale
 }
 
 @Composable
@@ -94,18 +149,26 @@ fun App(almacen: Almacen) {
         }
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        if (actual is Pantalla.Camara) {
-            // La cámara ocupa toda la pantalla, también bajo las barras del sistema.
-            PantallaCamara(almacen, actual.id, nav)
-        } else {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
-                when (actual) {
-                    Pantalla.Inicio -> PantallaInicio(almacen, nav)
-                    Pantalla.Nuevo -> PantallaNuevoPartido(almacen, nav)
-                    Pantalla.Ficha -> PantallaFicha(almacen, nav)
-                    is Pantalla.DePartido -> PantallaPartido(almacen, actual, nav)
-                    is Pantalla.Revisar -> PantallaRevisar(almacen, actual.id, actual.video, actual.desde, nav)
-                    is Pantalla.Camara -> Unit
+        AnimatedContent(
+            targetState = actual,
+            contentKey = ::clave,
+            transitionSpec = { transicion(initialState, targetState, nav.ultimo) },
+            label = "pantallas",
+        ) { p ->
+            if (p is Pantalla.Camara) {
+                // La cámara ocupa toda la pantalla, también bajo las barras del sistema.
+                PantallaCamara(almacen, p.id, nav)
+            } else {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
+                    when (p) {
+                        Pantalla.Inicio -> PantallaInicio(almacen, nav)
+                        Pantalla.Nuevo -> PantallaNuevoPartido(almacen, nav)
+                        Pantalla.Ficha -> PantallaFicha(almacen, nav)
+                        is Pantalla.DePartido -> PantallaPartido(almacen, p, nav)
+                        is Pantalla.Revisar -> PantallaRevisar(almacen, p.id, p.video, p.desde, nav)
+                        is Pantalla.Clips -> PantallaClips(almacen, p.id, nav)
+                        is Pantalla.Camara -> Unit
+                    }
                 }
             }
         }

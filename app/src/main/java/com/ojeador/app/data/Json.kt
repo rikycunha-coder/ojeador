@@ -157,6 +157,9 @@ object Json {
         .put("measures", JSONArray().also { a -> p.medidas.forEach { a.put(medida(it)) } })
         .put("askZone", p.pedirZona)
         .put("videoQ", p.calidadVideo)
+        .put("videoFps", p.fps)
+        .put("videoStab", p.estabilizar)
+        .put("videoAudio", p.sonido)
 
     fun perfil(o: JSONObject): Perfil {
         val d = Perfil()
@@ -173,7 +176,10 @@ object Json {
             alturaMadre = o.dbl("motherH"),
             medidas = o.optJSONArray("measures")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(::medida) } } ?: d.medidas,
             pedirZona = o.bool("askZone") ?: true,
-            calidadVideo = o.str("videoQ", d.calidadVideo),
+            calidadVideo = o.str("videoQ", d.calidadVideo).takeIf { it in setOf("HD", "FHD", "UHD") } ?: d.calidadVideo,
+            fps = o.int("videoFps")?.takeIf { it == 30 || it == 60 } ?: d.fps,
+            estabilizar = o.bool("videoStab") ?: d.estabilizar,
+            sonido = o.bool("videoAudio") ?: d.sonido,
         )
     }
 

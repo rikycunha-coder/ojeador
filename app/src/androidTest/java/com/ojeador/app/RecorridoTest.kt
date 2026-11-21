@@ -1,9 +1,11 @@
 package com.ojeador.app
 
 import android.app.UiAutomation
+import android.content.ContentUris
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -12,6 +14,8 @@ import android.provider.MediaStore
 import android.util.Log
 import android.view.WindowInsets
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyDescendant
@@ -19,6 +23,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onFirst
@@ -93,6 +98,8 @@ class RecorridoTest {
             captura("ficha")
             bajar()
             captura("ficha-2")
+            bajar()
+            captura("ficha-3")
         }
         volverAlInicio()
         var id: String? = null
@@ -123,6 +130,7 @@ class RecorridoTest {
         }
         paso("camara") { camara(id ?: error("no se creó el partido")) }
         paso("revisar") { revisar(id ?: error("no se creó el partido")) }
+        paso("clips") { clips() }
         paso("datos-nuevo") {
             pestana("Datos")
             captura("nuevo-datos")
@@ -160,6 +168,17 @@ class RecorridoTest {
             captura("estrecha-directo-2")
             pestana("Datos")
             captura("estrecha-datos")
+            pestana("Vídeo")
+            captura("estrecha-video")
+            traer(hasText("Preparar clips"))
+            clic(hasText("Preparar clips"))
+            esperar(10_000) { existe(hasText("Crear el vídeo")) }
+            SystemClock.sleep(2500)
+            captura("estrecha-clips")
+            bajar()
+            captura("estrecha-clips-2")
+            clic(hasContentDescription("Atrás"))
+            SystemClock.sleep(1000)
             clic(hasText("Cámara", substring = true))
             esperar(30_000) { existe(hasContentDescription("Grabar")) }
             SystemClock.sleep(4000)
@@ -186,6 +205,10 @@ class RecorridoTest {
         esperar(30_000) { existe(hasContentDescription("Grabar")) }
         SystemClock.sleep(4000)
         captura("camara")
+        clic(hasContentDescription("Ajustes de cámara"))
+        captura("camara-ajustes")
+        clic(hasContentDescription("Cerrar"))
+        SystemClock.sleep(1500)
         grabar()
         SystemClock.sleep(3000)
         regla.onNodeWithTag("camara").performTouchInput { click(Offset(width * 0.62f, height * 0.55f)) }
@@ -242,6 +265,31 @@ class RecorridoTest {
         val p = almacen.partido(id)
         File(salida, "jugadas.txt").writeText(p?.eventos?.joinToString("\n") ?: "sin partido")
         clic(hasContentDescription("Atrás"))
+    }
+
+    /** Desde la pestaña de vídeo: los clips para redes en vertical y en horizontal. */
+    private fun clips() {
+        traer(hasText("Preparar clips"))
+        captura("video-tab-clips")
+        clic(hasText("Preparar clips"))
+        esperar(10_000) { existe(hasText("Crear el vídeo")) }
+        // Los fotogramas de la vista previa y de la lista tardan un poco en salir.
+        SystemClock.sleep(3000)
+        captura("clips")
+        bajar()
+        captura("clips-2")
+        bajar()
+        captura("clips-3")
+        subir()
+        crearClip("vertical", vertical = true)
+        traer(hasText("Horizontal 16:9"))
+        clic(hasText("Horizontal 16:9"))
+        SystemClock.sleep(1500)
+        subir()
+        captura("clips-horizontal")
+        crearClip("horizontal", vertical = false)
+        clic(hasContentDescription("Atrás"))
+        SystemClock.sleep(1000)
     }
 
     private fun pdfs(id: String?) {
@@ -363,8 +411,70 @@ class RecorridoTest {
 
     private fun volverAlInicio() {
         repeat(5) {
-            if (existe(hasText("Seguimiento de", substring = true))) return
+            if (existe(hasTestTag("inicio"))) return
             runCatching { clic(hasContentDescription("Atrás")) }
+        }
+    }
+
+    /** Trae a la vista algo que está más abajo en una lista que se desliza. */
+    private fun traer(m: SemanticsMatcher) {
+        esperar(10_000) { existe(m) || existe(hasScrollAction()) }
+        // En una lista perezosa, lo de más abajo aún no existe: entonces se busca deslizando la lista.
+        val lista = if (existe(hasScrollAction() and hasAnyDescendant(m))) hasScrollAction() and hasAnyDescendant(m) else hasScrollAction()
+        runCatching { regla.onAllNodes(lista).onFirst().performScrollToNode(m) }
+            .onFailure { if (existe(m)) regla.onAllNodes(m).onFirst().performScrollTo() else throw it }
+        regla.waitForIdle()
+    }
+
+    /** Los clips guardados en Películas › Ojeador › Clips: dirección y nombre. */
+    private fun clipsGuardados(): List<Pair<Uri, String>> {
+        val r = mutableListOf<Pair<Uri, String>>()
+        ctx.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.RELATIVE_PATH),
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+            arrayOf("Movies/Ojeador/Clips%"),
+            "${MediaStore.MediaColumns.DATE_ADDED} DESC",
+        )?.use { c ->
+            while (c.moveToNext()) {
+                r += ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, c.getLong(0)) to c.getString(1)
+            }
+        }
+        return r
+    }
+
+    /** Crea un clip con lo que haya elegido en pantalla y comprueba que se guarda en la galería. */
+    private fun crearClip(nombre: String, vertical: Boolean) {
+        val antes = clipsGuardados().map { it.first }.toSet()
+        clic(hasText("Crear el vídeo"))
+        esperar(300_000) { existe(hasText("Vídeo listo")) || existe(hasText("No se pudo crear el vídeo")) }
+        captura("clips-$nombre-listo")
+        if (!existe(hasText("Vídeo listo"))) {
+            val textos = regla.onAllNodes(hasText("", substring = true)).fetchSemanticsNodes()
+                .mapNotNull { it.config.getOrNull(SemanticsProperties.Text)?.joinToString(" ") }
+            error("el clip $nombre no se creó: ${textos.takeLast(4)}")
+        }
+        val (uri, archivo) = clipsGuardados().firstOrNull { it.first !in antes } ?: error("el clip $nombre no está en Películas/Ojeador/Clips")
+        val mm = MediaMetadataRetriever()
+        try {
+            mm.setDataSource(ctx, uri)
+            val w = mm.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val h = mm.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val giro = mm.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            val dur = mm.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val audio = mm.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)
+            File(salida, "clip-$nombre.txt").writeText("$archivo\nancho=$w alto=$h giro=$giro duracion=$dur audio=$audio\n")
+            listOf(0.15, 0.4, 0.55, 0.85).forEachIndexed { i, f ->
+                mm.getFrameAtTime((dur * f * 1000).toLong(), MediaMetadataRetriever.OPTION_CLOSEST)?.let { bmp ->
+                    File(salida, "clip-$nombre-${i + 1}.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+            }
+            ctx.contentResolver.openInputStream(uri)?.use { i -> File(salida, "clip-$nombre.mp4").outputStream().use { i.copyTo(it) } }
+            val (ancho, alto) = if (giro == "90" || giro == "270") h to w else w to h
+            check(if (vertical) alto > ancho else ancho > alto) { "el clip $nombre salió de ${ancho}x$alto" }
+            check(dur > 1000) { "el clip $nombre dura $dur ms" }
+        } finally {
+            runCatching { mm.release() }
         }
     }
 
