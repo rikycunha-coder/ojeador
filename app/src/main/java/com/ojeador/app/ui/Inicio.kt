@@ -158,7 +158,9 @@ fun PantallaInicio(almacen: Almacen, nav: Navegador) {
             }
         }
         val lista = d.partidos.sortedWith(compareByDescending<Partido> { it.fecha }.thenByDescending { it.creado })
-        val enCurso = d.partido(d.actual)?.takeIf { !it.terminado && it.eventos.isNotEmpty() && !it.ejemplo }
+        // El último abierto si está a medias; si no (p. ej. se miró uno antiguo), el que tiene el reloj en marcha.
+        val aMedias = { q: Partido -> !q.terminado && q.eventos.isNotEmpty() && !q.ejemplo }
+        val enCurso = d.partido(d.actual)?.takeIf(aMedias) ?: d.partidos.firstOrNull { aMedias(it) && it.reloj.enMarcha }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 32.dp),

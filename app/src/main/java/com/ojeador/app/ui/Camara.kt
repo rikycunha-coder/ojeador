@@ -709,7 +709,7 @@ private fun PanelMas(
     onCerrar: () -> Unit,
 ) {
     var confirmarFin by remember { mutableStateOf(false) }
-    // Casi opaco: lo de detrás (botones, avisos) no se transparenta entre los ajustes.
+    // Casi opaco: los botones de la cámara no se transparentan entre las acciones.
     Box(Modifier.fillMaxSize().background(Color(0xF4050B14)).clickable(onClick = onCerrar)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 12.dp),
@@ -767,7 +767,8 @@ private fun PanelMas(
 /** Los ajustes de grabación, encima de la imagen (solo sin grabar: se aplican al momento). */
 @Composable
 private fun PanelAjustes(perfil: Perfil, soporte: SoporteCamara, libre: Long, onCambio: ((Perfil) -> Perfil) -> Unit, onCerrar: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onCerrar)) {
+    // Casi opaco: lo de detrás (botones, avisos) no se transparenta entre los ajustes.
+    Box(Modifier.fillMaxSize().background(Color(0xF4050B14)).clickable(onClick = onCerrar)) {
         Column(
             Modifier
                 .align(Alignment.Center)

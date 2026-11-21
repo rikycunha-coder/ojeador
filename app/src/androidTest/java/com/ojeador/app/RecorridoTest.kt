@@ -161,6 +161,7 @@ class RecorridoTest {
             SystemClock.sleep(2500)
             volverAlInicio()
             captura("estrecha-inicio")
+            traer(hasText("CE Prueba", substring = true))
             clic(hasText("CE Prueba", substring = true))
             SystemClock.sleep(1500)
             captura("estrecha-directo")
