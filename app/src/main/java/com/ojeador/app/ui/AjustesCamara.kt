@@ -30,8 +30,19 @@ import com.ojeador.app.camara.AjustesVideo
 import com.ojeador.app.camara.Mando
 import com.ojeador.app.data.Perfil
 
-/** Lo que admite la cámara de este móvil. Fuera de la cámara no se sabe (null) y se ofrece todo. */
-data class SoporteCamara(val admite4k: Boolean, val admite60: Boolean, val admiteEstabilizar: Boolean)
+/**
+ * Lo que admite la cámara de este móvil: 4K, a qué calidades da 60 imágenes por segundo ([con60])
+ * y estabilizar. Fuera de la cámara no se sabe (null) y se ofrece todo.
+ */
+data class SoporteCamara(val admite4k: Boolean, val con60: Set<String>, val admiteEstabilizar: Boolean) {
+    val admite60: Boolean get() = con60.isNotEmpty()
+
+    /** Lo que graba de verdad con [a]: a 30 si a esa calidad la cámara no da 60. */
+    fun real(a: AjustesVideo): AjustesVideo = if (a.fps >= 60 && a.calidad !in con60) a.copy(fps = 30) else a
+}
+
+/** «4K a 60». */
+fun AjustesVideo.nombre(): String = "${AjustesVideo.nombre(calidad)} a $fps"
 
 fun Perfil.ajustesVideo(): AjustesVideo = AjustesVideo(calidadVideo, fps, estabilizar)
 
@@ -76,8 +87,15 @@ fun AjustesGrabacion(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Elegir("Calidad", calidades, perfil.calidadVideo) { c -> onCambio { it.copy(calidadVideo = c) } }
         Elegir("Imágenes por segundo", listOf(30 to "30", 60 to "60, más fluido"), perfil.fps) { f -> onCambio { it.copy(fps = f) } }
-        if (soporte != null && !soporte.admite60 && perfil.fps == 60) {
-            Text("La cámara de este móvil no graba a 60: se queda en 30.", style = MaterialTheme.typography.bodySmall, color = suave)
+        if (soporte != null && perfil.fps == 60 && perfil.calidadVideo !in soporte.con60) {
+            // La mejor calidad a la que sí da 60, para ofrecerla.
+            val mejor60 = listOf("UHD", "FHD", "HD").firstOrNull { it in soporte.con60 }
+            Text(
+                if (mejor60 == null) "La cámara de este móvil no graba a 60: se queda en 30."
+                else "En ${AjustesVideo.nombre(perfil.calidadVideo)}, la cámara de este móvil graba a 30. A 60 graba en ${AjustesVideo.nombre(mejor60)}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Colores.Amarillo.takeIf { sobreCamara } ?: suave,
+            )
         }
         Interruptor(
             "Estabilizar",
@@ -95,9 +113,9 @@ fun AjustesGrabacion(
             { v -> onCambio { it.copy(sonido = v) } },
             claroSobreOscuro = sobreCamara,
         )
-        val a = perfil.ajustesVideo()
+        val a = perfil.ajustesVideo().let { soporte?.real(it) ?: it }
         Text(
-            "Un partido de 70 minutos ocupa unos ${dec(a.gbPorPartido())} GB en ${AjustesVideo.nombre(a.calidad)} a ${a.fps}." +
+            "Un partido de 70 minutos ocupa unos ${dec(a.gbPorPartido())} GB en ${a.nombre()}." +
                 if (a.calidad == "UHD") " El 4K se ve muy nítido, pero llena el móvil enseguida." else "",
             style = MaterialTheme.typography.bodySmall,
             color = suave,

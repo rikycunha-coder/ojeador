@@ -99,6 +99,7 @@ import com.ojeador.app.Almacen
 import com.ojeador.app.Navegador
 import com.ojeador.app.camara.Grabadora
 import com.ojeador.app.camara.Mando
+import com.ojeador.app.camara.calidadDe
 import com.ojeador.app.data.Accion
 import com.ojeador.app.data.Catalogo
 import com.ojeador.app.data.Evento
@@ -252,7 +253,12 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
             val n = q.videos.size + 1
             q.copy(videos = q.videos + VideoRef(videoId, uri.toString(), "Vídeo $n · ${q.reloj.parte}ª parte", true, q.reloj.parte, inicioMs, dur))
         }
-        ctx.aviso("Vídeo guardado en la galería (Películas › Ojeador)")
+        // En qué calidad quedó de verdad (se lee del vídeo, sin parar la pantalla: puede ser grande).
+        val app = ctx.applicationContext
+        Thread {
+            val calidad = calidadDe(app, uri)
+            vista.post { app.aviso(if (calidad != null) "Vídeo guardado en $calidad (Películas › Ojeador)" else "Vídeo guardado en la galería (Películas › Ojeador)") }
+        }.start()
     }
 
     fun anotar(k: String, ok: Boolean?) {
@@ -375,10 +381,11 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                     // a caballo entre la imagen y la franja. No recogen toques: el toque llega a la imagen.
                     if (!grabadora.grabando) {
                         val libre = remember(grabadora.grabando) { espacioLibre(ctx) }
-                        val a = perfil.ajustesVideo()
+                        // Lo que graba de verdad (4K a 30 si este móvil no da 4K a 60 a otras apps).
+                        val a = grabadora.efectivos
                         val minutos = (libre / 1_048_576.0 / a.mbPorMinuto).roundToInt()
                         Aviso(
-                            "Libre ${dec(libre / 1_073_741_824.0)} GB, unos $minutos min en ${AjustesVideo.nombre(a.calidad)}",
+                            "Libre ${dec(libre / 1_073_741_824.0)} GB, unos $minutos min en ${a.nombre()}",
                             Color.White,
                             Modifier.align(Alignment.BottomStart),
                         )
@@ -451,7 +458,7 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
         if (ajustes) {
             PanelAjustes(
                 perfil,
-                SoporteCamara(grabadora.admite4k, grabadora.admite60, grabadora.admiteEstabilizar),
+                SoporteCamara(grabadora.admite4k, grabadora.con60, grabadora.admiteEstabilizar),
                 espacioLibre(ctx),
                 onCambio = { f -> almacen.cambiarPerfil(f) },
                 onCerrar = { ajustes = false },
@@ -820,7 +827,7 @@ private fun PanelAjustes(perfil: Perfil, soporte: SoporteCamara, libre: Long, on
                 BotonIcono(Iconos.Cerrar, onCerrar, descripcion = "Cerrar", color = Color.White)
             }
             AjustesGrabacion(perfil, onCambio, sobreCamara = true, soporte = soporte)
-            val a = perfil.ajustesVideo()
+            val a = soporte.real(perfil.ajustesVideo())
             Text(
                 "Libre en el móvil: ${dec(libre / 1_073_741_824.0)} GB, unos ${(libre / 1_048_576.0 / a.mbPorMinuto).roundToInt()} minutos con este ajuste.",
                 color = Colores.Amarillo,

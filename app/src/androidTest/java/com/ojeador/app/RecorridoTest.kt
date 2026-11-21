@@ -39,6 +39,7 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.ojeador.app.camara.calidadDe
 import com.ojeador.app.pdf.InformePdf
 import com.ojeador.app.util.Compartir
 import org.junit.Assert.fail
@@ -224,6 +225,13 @@ class RecorridoTest {
         captura("camara-ajustes-boton")
         check(!existe(hasContentDescription("Parar la grabación"))) { "la prueba del botón se puso a grabar" }
         clic(hasText("Listo"))
+        // A 60: si a esa calidad la cámara no los da a esta app, los ajustes lo dicen (y se graba a 30).
+        traer(hasText("60, más fluido"))
+        clic(hasText("60, más fluido"))
+        SystemClock.sleep(2500)
+        captura("camara-ajustes-60")
+        clic(hasText("30"))
+        SystemClock.sleep(2500)
         traer(hasContentDescription("Cerrar"))
         clic(hasContentDescription("Cerrar"))
         SystemClock.sleep(1500)
@@ -251,7 +259,12 @@ class RecorridoTest {
         SystemClock.sleep(1500)
         captura("camara-guardado")
         val v = almacen.partido(id)?.videos?.firstOrNull()
-        if (v != null) File(salida, "video.txt").writeText(infoVideo(Uri.parse(v.uri)) + "\nref: $v\n")
+        if (v != null) {
+            // La calidad que el móvil dice al guardar, leída del propio vídeo.
+            val calidad = calidadDe(ctx, Uri.parse(v.uri))
+            File(salida, "video.txt").writeText(infoVideo(Uri.parse(v.uri)) + "\ncalidad: $calidad\nref: $v\n")
+            check(calidad != null && (calidad.startsWith("HD") || calidad.startsWith("Full HD"))) { "la calidad del vídeo se leyó como $calidad" }
+        }
         clic(hasContentDescription("Salir"))
         SystemClock.sleep(1500)
     }
