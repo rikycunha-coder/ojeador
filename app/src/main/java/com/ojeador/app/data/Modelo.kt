@@ -186,6 +186,10 @@ data class Perfil(
     val estabilizar: Boolean = true,
     /** Grabar también el sonido. */
     val sonido: Boolean = true,
+    /** El botón de grabar de un estabilizador (DJI Osmo) o de un mando Bluetooth empieza y para el vídeo. */
+    val botonGrabar: Boolean = true,
+    /** La tecla que manda ese botón, si se eligió con «Probar el botón»; null: las de siempre (volumen, cámara…). */
+    val teclaGrabar: Int? = null,
 )
 
 data class Datos(

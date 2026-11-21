@@ -2,6 +2,7 @@ package com.ojeador.app
 
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
@@ -34,6 +35,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.ojeador.app.camara.Mando
 import com.ojeador.app.ui.Movimiento
 import com.ojeador.app.ui.PantallaCamara
 import com.ojeador.app.ui.PantallaClips
@@ -65,6 +67,9 @@ class MainActivity : ComponentActivity() {
         val almacen = (application as OjeadorApp).almacen
         setContent { TemaOjeador { App(almacen) } }
     }
+
+    /** Los botones del estabilizador o de un mando llegan como teclas: primero los ve la pantalla que escucha. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = Mando.recibir(event) || super.dispatchKeyEvent(event)
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)

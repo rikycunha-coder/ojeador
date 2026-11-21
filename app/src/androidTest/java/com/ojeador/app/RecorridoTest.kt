@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
+import android.view.KeyEvent
 import android.view.WindowInsets
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -184,7 +185,10 @@ class RecorridoTest {
             esperar(30_000) { existe(hasContentDescription("Grabar")) }
             SystemClock.sleep(4000)
             captura("estrecha-camara")
-            grabar()
+            val videos = { almacen.datos.partidos.filter { it.rival == "CE Prueba" }.sumOf { it.videos.size } }
+            val antes = videos()
+            // Aquí se graba con el botón del estabilizador (llega como «volumen +»), no con el de la pantalla.
+            grabarConMando()
             SystemClock.sleep(2000)
             regla.onNodeWithTag("camara").performTouchInput { click(Offset(width * 0.5f, height * 0.5f)) }
             clic(hasText("Izq."))
@@ -193,7 +197,10 @@ class RecorridoTest {
             clic(hasText("Más"))
             captura("estrecha-camara-mas")
             clic(hasContentDescription("Cerrar"))
-            clic(hasContentDescription("Parar la grabación"))
+            // Y se para con el mismo botón: el vídeo queda guardado.
+            tecla(KeyEvent.KEYCODE_VOLUME_UP)
+            esperar(15_000) { existe(hasContentDescription("Grabar")) }
+            esperar(30_000) { videos() > antes }
             SystemClock.sleep(3000)
             clic(hasContentDescription("Salir"))
         }
@@ -208,6 +215,16 @@ class RecorridoTest {
         captura("camara")
         clic(hasContentDescription("Ajustes de cámara"))
         captura("camara-ajustes")
+        // «Probar el botón»: el de grabar del estabilizador llega como una tecla («volumen +»).
+        traer(hasText("Probar el botón"))
+        clic(hasText("Probar el botón"))
+        esperar(5_000) { existe(hasText("Pulsa ahora", substring = true)) }
+        tecla(KeyEvent.KEYCODE_VOLUME_UP)
+        esperar(5_000) { existe(hasText("Funciona", substring = true)) }
+        captura("camara-ajustes-boton")
+        check(!existe(hasContentDescription("Parar la grabación"))) { "la prueba del botón se puso a grabar" }
+        clic(hasText("Listo"))
+        traer(hasContentDescription("Cerrar"))
         clic(hasContentDescription("Cerrar"))
         SystemClock.sleep(1500)
         grabar()
@@ -335,6 +352,23 @@ class RecorridoTest {
             regla.waitForIdle()
         }
         check(existe(hasContentDescription("Parar la grabación"))) { "la cámara no empezó a grabar" }
+    }
+
+    /** Graba con el botón del estabilizador: llega como «volumen +», igual que el de un mando de selfie. */
+    private fun grabarConMando() {
+        var intentos = 0
+        while (!existe(hasContentDescription("Parar la grabación")) && intentos++ < 10) {
+            tecla(KeyEvent.KEYCODE_VOLUME_UP)
+            SystemClock.sleep(1500)
+            regla.waitForIdle()
+        }
+        check(existe(hasContentDescription("Parar la grabación"))) { "el botón del estabilizador no empezó a grabar" }
+    }
+
+    /** Pulsa y suelta una tecla, como la manda un estabilizador o un mando Bluetooth. */
+    private fun tecla(codigo: Int) {
+        instr.sendKeyDownUpSync(codigo)
+        regla.waitForIdle()
     }
 
     private fun paso(nombre: String, bloque: () -> Unit) {

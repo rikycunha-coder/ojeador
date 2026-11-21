@@ -160,6 +160,8 @@ object Json {
         .put("videoFps", p.fps)
         .put("videoStab", p.estabilizar)
         .put("videoAudio", p.sonido)
+        .put("remoteRec", p.botonGrabar)
+        .putOpt2("remoteKey", p.teclaGrabar)
 
     fun perfil(o: JSONObject): Perfil {
         val d = Perfil()
@@ -180,6 +182,8 @@ object Json {
             fps = o.int("videoFps")?.takeIf { it == 30 || it == 60 } ?: d.fps,
             estabilizar = o.bool("videoStab") ?: d.estabilizar,
             sonido = o.bool("videoAudio") ?: d.sonido,
+            botonGrabar = o.bool("remoteRec") ?: d.botonGrabar,
+            teclaGrabar = o.int("remoteKey")?.takeIf { it > 0 },
         )
     }
 

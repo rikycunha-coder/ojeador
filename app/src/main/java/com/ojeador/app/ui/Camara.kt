@@ -23,6 +23,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import androidx.activity.compose.BackHandler
@@ -97,6 +98,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.ojeador.app.Almacen
 import com.ojeador.app.Navegador
 import com.ojeador.app.camara.Grabadora
+import com.ojeador.app.camara.Mando
 import com.ojeador.app.data.Accion
 import com.ojeador.app.data.Catalogo
 import com.ojeador.app.data.Evento
@@ -271,6 +273,39 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
         anotado = nuevo
     }
 
+    fun alternarGrabacion() {
+        if (grabadora.grabando) grabadora.parar()
+        else if (!grabadora.grabar(conAudio && perfil.sonido, ::alGuardar)) ctx.aviso(grabadora.error ?: "La cámara aún no está lista")
+    }
+
+    // El botón de grabar del estabilizador (DJI Osmo) o de un mando Bluetooth llega como una tecla:
+    // volumen, cámara, multimedia… (o la que se eligió en «Probar el botón»).
+    val ultimoMando = remember { longArrayOf(0L) }
+    EscucharMando { e ->
+        val k = e.keyCode
+        when {
+            k == KeyEvent.KEYCODE_ZOOM_IN || k == KeyEvent.KEYCODE_ZOOM_OUT -> {
+                if (e.action == KeyEvent.ACTION_DOWN) grabadora.zoomPor(if (k == KeyEvent.KEYCODE_ZOOM_IN) 1.1f else 1 / 1.1f)
+                true
+            }
+            !perfil.botonGrabar || !Mando.esDeGrabar(k, perfil.teclaGrabar) -> false
+            else -> {
+                // Una vez por pulsación: ni al dejarlo pulsado, ni si llega repetida (hay mandos que
+                // mandan dos teclas a la vez), ni una que llega con retraso.
+                val t = e.eventTime
+                if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0 && t - ultimoMando[0] > 900 && SystemClock.uptimeMillis() - t < 2000) {
+                    ultimoMando[0] = t
+                    ajustes = false
+                    salir = false
+                    alternarGrabacion()
+                    vista.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                }
+                // La tecla se queda aquí: el volumen no cambia mientras se graba con el botón.
+                true
+            }
+        }
+    }
+
     BackHandler {
         when {
             ajustes -> ajustes = false
@@ -368,10 +403,8 @@ private fun VistaCamara(almacen: Almacen, p: Partido, conAudio: Boolean, nav: Na
                 BotonGrabar(
                     grabadora,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
-                ) {
-                    if (grabadora.grabando) grabadora.parar()
-                    else if (!grabadora.grabar(conAudio && perfil.sonido, ::alGuardar)) ctx.aviso(grabadora.error ?: "La cámara aún no está lista")
-                }
+                    onClick = ::alternarGrabacion,
+                )
                 grabadora.error?.let {
                     Text(
                         it,

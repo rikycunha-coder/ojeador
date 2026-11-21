@@ -32,10 +32,12 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.Ojeador">
-        <!-- La pantalla de cámara gira a horizontal sin recrear la actividad: así no se corta la grabación. -->
+        <!-- La pantalla de cámara gira a horizontal sin recrear la actividad: así no se corta la grabación.
+             Tampoco se recrea al conectarse o desconectarse un estabilizador o un mando Bluetooth, que
+             Android ve como un teclado (keyboard, navigation). -->
         <activity
             android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
