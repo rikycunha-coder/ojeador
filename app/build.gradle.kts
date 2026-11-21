@@ -69,6 +69,11 @@ dependencies {
     implementation(libs.androidx.camera.video)
     implementation(libs.androidx.camera.view)
 
+    // Clips para redes: recortar las jugadas del vídeo, en vertical u horizontal, con rótulo.
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
+    implementation(libs.androidx.media3.common)
+
     testImplementation(libs.junit)
     // org.json real para las pruebas (en el móvil lo pone Android).
     testImplementation(libs.org.json)
